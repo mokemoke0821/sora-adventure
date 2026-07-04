@@ -302,17 +302,26 @@ const SP={1:["mushroom","mouse","slime"],2:["imp","knight","cursist"],3:["mimic"
 const SE={1:"sakuya",2:"goliath",3:"ryusei"};
 const SB={1:"momo",2:"tempura",3:"roi"};
 function genMap(stage){
-  const rows=stage===1?7:stage===2?8:9;const map=[];const pool=SP[stage];
+  // マップ延長: 各ステージ9/10/11ノード（現行7/8/9から延長・入替機会増）
+  const rows=stage===1?9:stage===2?10:11;const map=[];const pool=SP[stage];
+  let swapPlaced=false;
   for(let i=0;i<rows;i++){
     if(i===rows-1){map.push([{type:"boss",id:SB[stage]}]);continue;}
-    if(i===0){map.push([{type:"battle",enemyPool:pool}]);continue;}
+    if(i===rows-2){map.push([{type:"rest"}]);continue;}          // ボス直前は休憩所固定（デッキ調整保証）
+    if(i===0||i===1){                                            // 序盤2ノードは戦闘/イベントのみ（開幕ショップ防止）
+      const nodes=[];const cnt=2+Math.floor(Math.random()*2);
+      for(let j=0;j<cnt;j++)nodes.push(Math.random()<.6?{type:"battle",enemyPool:pool}:{type:"event"});
+      map.push(nodes);continue;
+    }
     const nodes=[];const cnt=2+Math.floor(Math.random()*2);
-    for(let j=0;j<cnt;j++){const r=Math.random();
-      if(r<.30)nodes.push({type:"battle",enemyPool:pool});
-      else if(r<.44)nodes.push({type:"elite",id:SE[stage]});
-      else if(r<.58)nodes.push({type:"event"});
-      else if(r<.72)nodes.push({type:"rest"});
-      else if(r<.86)nodes.push({type:"shop"});
+    for(let j=0;j<cnt;j++){
+      if(!swapPlaced&&Math.random()<.14){nodes.push({type:"swap"});swapPlaced=true;continue;} // 交換所は各ステージ1個まで
+      const r=Math.random();                                     // 比率: 戦闘40/イベント20/エリート10/ショップ10/休憩10/宝箱10
+      if(r<.40)nodes.push({type:"battle",enemyPool:pool});
+      else if(r<.50)nodes.push({type:"elite",id:SE[stage]});
+      else if(r<.70)nodes.push({type:"event"});
+      else if(r<.80)nodes.push({type:"shop"});
+      else if(r<.90)nodes.push({type:"rest"});
       else nodes.push({type:"treasure"});}
     map.push(nodes);
   }
@@ -437,6 +446,7 @@ function SoraAdventure(){
       const eid=node.id;const t=EN[eid];if(!t){initBattle(s,eid);return;}
       s.skit=skitLines(t,node.type);s.skitIdx=0;s.skitEid=eid;s.screen="skit";}
     else if(node.type==="rest"){s.restChoice=null;s.screen="rest";s.suzuMsg=suzu("rest");}
+    else if(node.type==="swap"){s.swapChoice=null;s.screen="swap";s.suzuMsg=suzu("event");}
     else if(node.type==="shop"){
       const pool=Object.keys(CM).filter(k=>CM[k].r!=="x");
       s.shopCards=shuffle(pool).slice(0,4).map(id=>({card:mc(id),price:CM[id].r==="r"?70:CM[id].r==="u"?50:35}));
@@ -631,7 +641,7 @@ function SoraAdventure(){
     if(beatRoi){s.meta.clears++;s.meta.bestStage=3;s.screen="ending";s.endIdx=0;return;}
     s.log.push("🎉 勝利！");s.suzuMsg=suzu("bossWin");
     const isBoss=s.enemies.some(e=>EN[e.id]?.boss);const isElite=s.enemies.some(e=>EN[e.id]?.elite);
-    let gold=isBoss?100:isElite?50:25;
+    let gold=isBoss?100:isElite?44:22;  // ノード増インフレ抑制: 戦闘/エリート報酬を約12%減
     const _stolen=s.enemies.reduce((a,e)=>a+(e.stolen||0),0);
     if(_stolen>0){gold+=_stolen+10;s.log.push(`💰 奪われた${_stolen}Gと慰謝料10Gを回収！`);}
     s.run.gold+=gold;
@@ -669,6 +679,16 @@ function SoraAdventure(){
   const restEnhance=idx=>upd(s=>{const c=s.run.deck[idx];if(!c)return;sfx("heal");
     if(enhance(c))s.log=[`✨ ${c.name}に強化！`];else s.log=["😴 にーや「もう強い...zzz」"];
     s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");});
+
+  // ═══ 交換所（すらいむ亜種）: 削除(無料1回) or 同レア交換 ═══
+  const swapRemove=idx=>upd(s=>{const c=s.run.deck[idx];if(!c||s.run.deck.length<=5)return;sfx("click");
+    s.run.deck.splice(idx,1);s.log=[`♻️ すらいむ「${c.name}、確かに引き取った」（無料削除）`];
+    s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");});
+  const swapTrade=idx=>upd(s=>{const c=s.run.deck[idx];if(!c)return;sfx("click");
+    const same=Object.keys(CM).filter(k=>CM[k].r===c.r&&CM[k].r!=="x"&&k!==c.id);
+    if(!same.length){s.log=["♻️ すらいむ「同レアの在庫が切れてる…すまんな」"];s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");return;}
+    const nc=mc(pick(same));s.run.deck[idx]=nc;
+    s.log=[`♻️ ${c.name} ⇔ ${nc.name} と物々交換！`];s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");});
 
   // ═══ 共通UI ═══
   const st={
@@ -785,8 +805,8 @@ function SoraAdventure(){
   // ══ MAP ══
   if(gs.screen==="map"&&gs.run){
     const{run}=gs;const stg=run.stage;
-    const icons={battle:stg===3?"📦":stg===2?"😈":"🍄",elite:stg===3?"🦇":"⚔️",boss:stg===3?"👿":stg===2?"🔥":"🖤",event:"❓",rest:"😴",shop:"🛡️",treasure:"📦"};
-    const colors={battle:"#555",elite:"#e67e22",boss:P.accent,event:"#9b59b6",rest:"#2ecc71",shop:"#3498db",treasure:P.gold};
+    const icons={battle:stg===3?"📦":stg===2?"😈":"🍄",elite:stg===3?"🦇":"⚔️",boss:stg===3?"👿":stg===2?"🔥":"🖤",event:"❓",rest:"😴",shop:"🛡️",treasure:"📦",swap:"♻️"};
+    const colors={battle:"#555",elite:"#e67e22",boss:P.accent,event:"#9b59b6",rest:"#2ecc71",shop:"#3498db",treasure:P.gold,swap:"#1abc9c"};
     return(<div style={st.wrap}><style>{CSS}</style><DeckModal/>
       <div className="fadein" style={{padding:16}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -804,7 +824,7 @@ function SoraAdventure(){
         {gs.mokeMsg&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:8,marginBottom:8,fontSize:12,color:"#9fa8da"}}>💤 {gs.mokeMsg}</div>}
         <div style={{...st.suzuBox,marginBottom:8,fontSize:13}}>🐑 すず「{gs.suzuMsg}」</div>
         {gs.log.length>0&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:8,padding:8,marginBottom:8,fontSize:12,color:P.dim}}>{gs.log[gs.log.length-1]}</div>}
-        <div style={{fontSize:10,color:P.dim,marginBottom:6,lineHeight:1.6}}>▶ の行から行き先を1つタップして進みます ─ {icons.battle}バトル ⚔️エリート ❓イベント 😴休憩(回復/強化) 🛡️ショップ 📦宝箱 {icons.boss}ボス</div>
+        <div style={{fontSize:10,color:P.dim,marginBottom:6,lineHeight:1.6}}>▶ の行から行き先を1つタップして進みます ─ {icons.battle}バトル ⚔️エリート ❓イベント 😴休憩(回復/強化) 🛡️ショップ 📦宝箱 ♻️交換所 {icons.boss}ボス</div>
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {run.map.map((row,ri)=>(
             <div key={ri} style={{display:"flex",justifyContent:"center",gap:6,opacity:ri===run.row?1:ri<run.row?.3:.5,position:"relative"}}>
@@ -909,6 +929,39 @@ function SoraAdventure(){
             </button>))}
         </div>
         <button style={{...st.btn("#555"),marginTop:16}} onClick={()=>upd(s=>{s.restChoice=null;})}>戻る</button>
+      </div></div>);
+  }
+
+  // ══ SWAP（交換所） ══
+  if(gs.screen==="swap"&&gs.run){
+    const{run}=gs;
+    if(!gs.swapChoice)return(<div style={st.wrap}><style>{CSS}</style>
+      <div className="fadein" style={{padding:20,minHeight:"100dvh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14}}>
+        <div style={{fontSize:48}}>🫠♻️</div>
+        <div style={{fontSize:14,fontWeight:700}}>交換所</div>
+        <div style={{fontSize:12,color:P.dim,textAlign:"center",lineHeight:1.7,maxWidth:320}}>すらいむ「ここは交換所だ。売買はしない。物々交換…原始的だが、需要がある」</div>
+        <div style={{...st.suzuBox,maxWidth:300}}>🐑 すず「{gs.suzuMsg}」</div>
+        <div style={{fontSize:11,color:P.dim}}>どちらか一方だけ選べます（選ぶと次へ進みます）</div>
+        <button style={st.btn("#e67e22")} onClick={()=>upd(s=>{s.swapChoice="remove";})}>🗑️ カード削除（無料）</button>
+        <button style={st.btn("#1abc9c")} onClick={()=>upd(s=>{s.swapChoice="trade";})}>♻️ 同レア交換</button>
+        <button style={st.btn("#555")} onClick={()=>upd(s=>{s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");})}>立ち去る</button>
+      </div></div>);
+    const isRemove=gs.swapChoice==="remove";
+    return(<div style={st.wrap}><style>{CSS}</style>
+      <div style={{padding:16,minHeight:"100dvh"}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>{isRemove?"🗑️ 削除するカードを選択":"♻️ 交換するカードを選択"}</div>
+        <div style={{fontSize:11,color:P.dim,marginBottom:6}}>{isRemove?"すらいむ「削除? 一点物なら手数料はサービスだ。宣伝しといてくれ」（5枚以下は削除不可）":"選んだカードを同レアのランダムなカードに交換します"}</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {run.deck.map((card,i)=>(
+            <button key={card.uid} onClick={()=>isRemove?swapRemove(i):swapTrade(i)} disabled={isRemove&&run.deck.length<=5}
+              style={{background:P.cardBg,border:`2px solid ${card.color}`,borderRadius:8,padding:7,
+                display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:isRemove&&run.deck.length<=5?"not-allowed":"pointer",touchAction:"manipulation",minWidth:68,opacity:isRemove&&run.deck.length<=5?.5:1}}>
+              <div style={{fontSize:9}}>{rarityBadge(card.r)}</div>
+              <div style={{fontSize:18}}>{card.icon}</div><div style={{fontSize:10,fontWeight:700,color:card.color}}>{card.name}</div>
+              <div style={{fontSize:8,color:P.dim}}>{card.desc}</div>
+            </button>))}
+        </div>
+        <button style={{...st.btn("#555"),marginTop:16}} onClick={()=>upd(s=>{s.swapChoice=null;})}>戻る</button>
       </div></div>);
   }
 
