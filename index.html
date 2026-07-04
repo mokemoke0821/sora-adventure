@@ -21,7 +21,7 @@
 const { useState, useCallback, useRef } = React;
 
 /* ═══════════════════════════════════════════
-   ソラの大冒険 — v2.2 初心者フレンドリー版
+   ソラの大冒険 — v2.3 バランス整合+セーブ版
    用語日本語化/チュートリアル/あそびかたヘルプ
    全3ステージ+ろい3フェーズ+エンディング
    レリック/ポーション/演出/効果音
@@ -30,6 +30,11 @@ const { useState, useCallback, useRef } = React;
 function shuffle(a){const b=[...a];for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
 function pick(a){return a[Math.floor(Math.random()*a.length)];}
 function uid(){return Math.random().toString(36).slice(2,9);}
+const _mem={};
+const store={
+  get(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):_mem[k]??null;}catch(e){return _mem[k]??null;}},
+  set(k,v){_mem[k]=v;try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+};
 
 // ═══ 効果音（WebAudio合成） ═══
 let AC=null;
@@ -60,6 +65,7 @@ function hasR(s,id){return s.run.relics.some(r=>r.id===id);}
 function dmgE(s,idx,base,isAtk=true){
   const e=s.enemies[idx];if(!e||e.hp<=0)return 0;
   let d=Math.max(0,base+(s.run.str||0));
+  if(s.run.weakened>0)d=Math.floor(d*.75);
   if(isAtk){
     if(hasR(s,"rusty"))d+=2;
     if(hasR(s,"ragemask")&&s.run.hp<=s.run.maxHp*.4)d=Math.floor(d*1.5);
@@ -91,7 +97,7 @@ const EFF={
   combo:s=>{for(let i=0;i<3;i++)dmgE(s,s.ti,4);},"combo+":s=>{for(let i=0;i<4;i++)dmgE(s,s.ti,4);},
   fireball:s=>{dmgE(s,s.ti,16);const e=s.enemies[s.ti];if(e)e.burn=(e.burn||0)+2;},
   "fireball+":s=>{dmgE(s,s.ti,20);const e=s.enemies[s.ti];if(e)e.burn=(e.burn||0)+3;},
-  pierce:s=>{const e=s.enemies[s.ti];if(e){const d=20+(s.run.str||0)+(hasR(s,"rusty")?2:0);e.hp-=d;addPop(s,s.ti,`-${d}`,"#ffab40");}},
+  pierce:s=>{const e=s.enemies[s.ti];if(e){let d=20+(s.run.str||0)+(hasR(s,"rusty")?2:0);if(s.run.weakened>0)d=Math.floor(d*.75);e.hp-=d;addPop(s,s.ti,`-${d}`,"#ffab40");}},
   reckless:s=>{dmgE(s,s.ti,30);s.run.hp-=8;addPop(s,"p","-8","#ff8a65");},
   poison:s=>{dmgE(s,s.ti,6);const e=s.enemies[s.ti];if(e)e.poison=(e.poison||0)+3;},
   thunder:s=>{const n=Math.random()<.5?2:1;for(let i=0;i<n;i++)dmgE(s,s.ti,14);},
@@ -127,8 +133,8 @@ const CM={
   drain:{name:"吸収",icon:"💜",cost:2,type:"skill",color:"#2ecc71",desc:"10ダメージ+HP6回復",r:"u"},
   rage:{name:"憤怒",icon:"💪",cost:1,type:"skill",color:"#2ecc71",desc:"筋力+2(永続)",r:"u"},
   accel:{name:"加速",icon:"⚡",cost:1,type:"skill",color:"#2ecc71",desc:"1枚引く+⚡1",r:"u"},
-  cleanse:{name:"浄化",icon:"✨",cost:1,type:"skill",color:"#2ecc71",desc:"毒・炎上・弱体を解除",r:"u"},
-  scout:{name:"偵察",icon:"🔍",cost:0,type:"skill",color:"#2ecc71",desc:"カードを2枚引く",r:"c"},
+  cleanse:{name:"浄化",icon:"✨",cost:1,type:"skill",color:"#2ecc71",desc:"デバフ解除+手札の呪い1枚除去",r:"u"},
+  scout:{name:"偵察",icon:"🔍",cost:1,type:"skill",color:"#2ecc71",desc:"カードを2枚引く",r:"c"},
   fatigue:{name:"疲労",icon:"💀",cost:99,type:"curse",color:"#666",desc:"使えないゴミ札",r:"x"},
   pain:{name:"痛み",icon:"💀",cost:99,type:"curse",color:"#666",desc:"毎ターン2ダメージ",r:"x"},
 };
@@ -198,7 +204,7 @@ const EN={
   imp:{name:"炎のインプ",icon:"😈",hp:38,maxHp:38,
     deck:["fb","fb","boom","dance","fb"],lines:["あっちっち！ 俺だけに！"],
     cards:{fb:{name:"火炎弾",dmg:10,burn:1},boom:{name:"自爆突進",dmg:18,selfDmg:8,burn:2},dance:{name:"火の踊り",shield:5}}},
-  knight:{name:"鎧騎士",icon:"🛡️",hp:60,maxHp:60,
+  knight:{name:"鎧騎士",icon:"🛡️",hp:60,maxHp:60,keepShield:true,
     deck:["big","big","bash","big","thrust"],lines:["守りは任せろ。...攻撃？ 知らん"],
     cards:{big:{name:"大盾",shield:14},bash:{name:"シールドバッシュ",shieldBash:true},thrust:{name:"突き",dmg:9}}},
   cursist:{name:"呪い師",icon:"👻",hp:30,maxHp:30,
@@ -259,7 +265,7 @@ const MOKE={
   stage2:"もけもけ：「ソラは森を抜けた。次は灼熱のコロシアム。...暑いの苦手なんだよね、僕。まあ行かないけど」",
   stage3:"もけもけ：「ついに魔王城。147人の勇者が散った場所。...ソラで148人目にならないといいね。他人事だけど」",
 };
-const GH={poison:"毒が溜まってるぞ。浄化か回復しろ",lowHp:"死にたいのか？ シールド張れ",counter:"やめとけ。「構え」中だ、反撃喰らうぞ",phase:"来るぞ。構えろ",weak:"筋力下げられたな。憤怒で取り返せ",multi:"敵が増えたぞ。タップで攻撃先を変えろ",charge:"溜めてるぞ。次のターン大技が来る",burn:"炎上が重なってるぞ",doom:"即死タイマーだ！ 3ターン以内に削りきれ！！",double:"次の攻撃2倍が来るぞ。シールド最大まで積め",mimic:"そいつ宝箱じゃないぞ。2ターン目から本気出す"};
+const GH={poison:"毒が溜まってるぞ。浄化か回復しろ",lowHp:"死にたいのか？ シールド張れ",counter:"やめとけ。「構え」中だ、反撃喰らうぞ",phase:"来るぞ。構えろ",weak:"弱体中だ。攻撃が25%減ってる。浄化で解除しろ",multi:"敵が増えたぞ。タップで攻撃先を変えろ",charge:"溜めてるぞ。次のターン大技が来る",burn:"炎上が重なってるぞ",doom:"即死タイマーだ！ 3ターン以内に削りきれ！！",double:"次の攻撃2倍が来るぞ。シールド最大まで積め",mimic:"そいつ宝箱じゃないぞ。2ターン目から本気出す"};
 const TUT=[
  "カードをタップして使うのよ♡ カード右下の⚡がコスト。あなたの⚡（エネルギー）は毎ターン回復するわ",
  "敵の下の🔮は次の行動予告♡ 大きいダメージが来る前に、防壁でシールド（🛡️）を張って防ぐの",
@@ -352,7 +358,7 @@ const CSS=`
 function SoraAdventure(){
   const gsRef=useRef({
     screen:"title",run:null,battle:null,enemies:[],ti:0,
-    meta:{totalRuns:0,bestStage:0,clears:0},log:[],reward:null,hint:null,suzuMsg:"",mokeMsg:"",roiMsg:"",tut:0,showHelp:false,helpIntro:false,
+    meta:Object.assign({totalRuns:0,bestStage:0,clears:0},store.get("sora:meta")||{}),log:[],reward:null,hint:null,suzuMsg:"",mokeMsg:"",roiMsg:"",tut:0,showHelp:false,helpIntro:false,
     skit:null,skitIdx:0,skitEid:null,goTaunt:"",goAdvice:"",
     shopCards:[],shopPotions:[],shopRelic:null,shopScreen:null,restChoice:null,
     pops:[],shakeOn:false,showDeck:false,endIdx:0,_rr:null,
@@ -360,7 +366,7 @@ function SoraAdventure(){
   const[tick,setTick]=useState(0);const gs=gsRef.current;
   const rr=useCallback(()=>setTick(t=>t+1),[]);
   gs._rr=rr;
-  const upd=useCallback(fn=>{fn(gsRef.current);rr();},[rr]);
+  const upd=useCallback(fn=>{fn(gsRef.current);store.set("sora:meta",gsRef.current.meta);rr();},[rr]);
 
   function makeE(eid){const t=EN[eid];if(!t)return null;
     return{id:eid,name:t.name,icon:t.icon,hp:t.hp,maxHp:t.maxHp,shield:0,deckIdx:0,phase:1,poison:0,burn:0,str:0,intent:null,counterStance:0,summoned:t.summoned||false,doom:0,doubleNext:false};}
@@ -372,7 +378,7 @@ function SoraAdventure(){
   function initBattle(s,eid){
     const t=EN[eid];if(!t)return;
     s.screen="battle";
-    s.battle={hand:[],drawPile:shuffle(s.run.deck),discardPile:[],energy:s.run.maxEnergy,turn:1};
+    s.battle={hand:[],drawPile:shuffle(s.run.deck),discardPile:[],energy:s.run.maxEnergy,turn:1,atkN:0,defN:0,eHinted:false};
     s.enemies=[makeE(eid)];s.ti=0;
     s.run.shield=0;s.run.counter=0;s.run.thorns=0;s.run.weakened=0;s.run.energyDebt=0;
     s.log=[`${t.icon} ${t.name} が現れた！`];s.hint=eid==="mimic"?GH.mimic:null;s.roiMsg="";
@@ -458,6 +464,8 @@ function SoraAdventure(){
     const tgt=s.enemies[s.ti];
     if(tgt?.counterStance>0&&card.type==="attack"){s.hint=GH.counter;s.suzuMsg=suzu("counterTip");}
     s.battle.energy-=cost;s.battle.hand.splice(idx,1);
+    if(card.type==="attack")s.battle.atkN=(s.battle.atkN||0)+1;
+    if(card.type==="defend")s.battle.defN=(s.battle.defN||0)+1;
     sfx(card.type==="attack"?"atk":card.type==="defend"?"def":"heal");
     if(card.id==="allcut"){const n=s.battle.hand.length+1;dmgE(s,s.ti,n*12);s.battle.discardPile.push(...s.battle.hand.splice(0));}
     else{const f=EFF[card.id];if(f)f(s);}
@@ -475,12 +483,13 @@ function SoraAdventure(){
   const endTurn=()=>upd(s=>{
     if(s.screen!=="battle"||!s.battle)return;
     sfx("click");
+    const _hp0=s.run.hp,_sh0=s.run.shield,_en0=s.battle.energy,_atk=s.battle.atkN||0,_def=s.battle.defN||0;
     s.run.shield=Math.floor(s.run.shield/2);s.run.counter=0;
     for(let i=0;i<s.enemies.length;i++){if(s.enemies[i].hp<=0)continue;enemyAct(s,i);if(s.run.hp<=0){onLose(s);return;}}
     if(s.enemies.every(e=>e.hp<=0)){onWin(s);return;}
     // プレイヤーDOT
     if(s.run.poison>0){s.run.hp-=s.run.poison;addPop(s,"p",`☠️-${s.run.poison}`,"#9ccc65");s.run.poison=Math.max(0,s.run.poison-1);}
-    if(s.run.burn>0){const bd=hasR(s,"firecloak")?Math.ceil(s.run.burn/2):s.run.burn;s.run.hp-=bd;addPop(s,"p",`🔥-${bd}`,"#ff8a65");s.run.burn=Math.max(0,s.run.burn-1);}
+    if(s.run.burn>0){const bd=hasR(s,"firecloak")?Math.ceil(s.run.burn/2):s.run.burn;s.run.hp-=bd;addPop(s,"p",`🔥-${bd}`,"#ff8a65");s.run.burn=Math.floor(s.run.burn/2);}
     if(s.run.weakened>0)s.run.weakened--;
     s.battle.hand.forEach(c=>{if(c.id==="pain")s.run.hp-=2;});
     if(s.run.thorns>0)s.run.thorns--;
@@ -488,15 +497,15 @@ function SoraAdventure(){
     // 敵DOT
     s.enemies.forEach(e=>{if(e.hp<=0)return;
       if(e.poison>0){e.hp-=e.poison;e.poison=Math.max(0,e.poison-1);}
-      if(e.burn>0){e.hp-=e.burn;e.burn=Math.max(0,e.burn-1);}});
+      if(e.burn>0){e.hp-=e.burn;e.burn=Math.floor(e.burn/2);}});
     if(s.enemies.every(e=>e.hp<=0)){onWin(s);return;}
     // 新ターン
-    s.battle.turn++;
+    s.battle.turn++;s.battle.atkN=0;s.battle.defN=0;
     s.battle.energy=Math.max(0,s.run.maxEnergy-(s.run.energyDebt||0));
     if(s.run.energyDebt>0){s.log.push(`⚡ 圧政でエネルギー-${s.run.energyDebt}...`);s.run.energyDebt=0;}
     if(hasR(s,"hourglass")&&s.battle.turn%3===0){s.battle.energy+=1;s.log.push("⏳ 砂時計: エネルギー+1");}
     s.battle.discardPile.push(...s.battle.hand.splice(0));
-    s.enemies.forEach(e=>{if(e.hp>0){e.shield=0;e.counterStance=0;}});
+    s.enemies.forEach(e=>{if(e.hp>0){if(!EN[e.id]?.keepShield)e.shield=0;e.counterStance=0;}});
     if(hasR(s,"mirror"))s.run.shield+=4;
     // Phase移行
     s.enemies.forEach(e=>{if(e.hp<=0)return;const t=EN[e.id];
@@ -514,8 +523,18 @@ function SoraAdventure(){
     if(s.enemies[s.ti]?.hp<=0){const a=s.enemies.findIndex(e=>e.hp>0);if(a>=0)s.ti=a;}
     showAllInt(s);
     // ろいのダメ出し / すず
-    if(s.enemies.some(e=>e.id==="roi"&&e.hp>0)&&Math.random()<.35)s.roiMsg=pick(ROI_BATTLE);
-    else s.roiMsg="";
+    const _lost=_hp0-s.run.hp;
+    if(s.enemies.some(e=>e.id==="roi"&&e.hp>0)){
+      if(_lost>=15&&_sh0===0)s.roiMsg=`ろい「ノーガードで${_lost}点！？ 見てるこっちが痛いんだけど！」`;
+      else if(_atk>=3&&_def===0&&_lost>0)s.roiMsg="ろい「脳筋すぎ！ 防御カードって知ってる？」";
+      else if(_en0>=2)s.roiMsg="ろい「⚡余らせてターン終了？ 豪気だね〜」";
+      else if(Math.random()<.2)s.roiMsg=pick(ROI_BATTLE);
+      else s.roiMsg="";
+    }else{
+      s.roiMsg="";
+      if(_lost>=15&&_sh0===0&&!s.hint)s.hint=`ノーガードで${_lost}点もらったな。シールド張れ`;
+      else if(_en0>=2&&!s.battle.eHinted&&!s.hint){s.hint="エネルギー余ってたぞ。使い切ってから終われ";s.battle.eHinted=true;}
+    }
     if(Math.random()<.2)s.suzuMsg=suzu("battleHint");
     // シェイクリセット
     setTimeout(()=>{gsRef.current.shakeOn=false;rr();},400);
@@ -555,13 +574,13 @@ function SoraAdventure(){
     if(card.selfBurn)e.burn=(e.burn||0)+card.selfBurn;
     if(card.doubleNext){e.doubleNext=true;s.hint=GH.double;s.log.push(`⚠️ ${e.name}の次の攻撃はダメージ2倍！`);}
     if(card.doom){e.doom=card.doom+1;s.hint=GH.doom;s.log.push(`💀 終焉宣告！！ ${card.doom}ターン後に999ダメージ！！`);sfx("doom");}
-    if(card.stealGold){s.run.gold=Math.max(0,s.run.gold-card.stealGold);s.log.push(`💰 ${card.stealGold}G奪われた！`);}
+    if(card.stealGold){const st=Math.min(s.run.gold,card.stealGold);s.run.gold-=st;e.stolen=(e.stolen||0)+st;s.log.push(`💰 ${st}G奪われた！（倒せば取り返せる）`);}
     if(card.curse){
       if(hasR(s,"wardcharm")&&Math.random()<.5){s.log.push("🧿 護符が呪いを弾いた！");}
       else{const c=mc(card.curse);if(c){s.battle.discardPile.push(c);s.log.push(`💀 呪い「${c.name}」が混入！`);}}}
     if(card.convertPoison&&s.run.poison>0){const cv=s.run.poison*card.convertPoison;s.log.push(`☠️ 毒変換！ ${cv}dmg！`);dmgP(s,cv);sfx("hit");s.run.poison=0;}
     if(card.summon&&s.enemies.length<3){const ne=makeE(card.summon);if(ne){s.enemies.push(ne);s.log.push(`${ne.icon} ${ne.name} が現れた！`);showInt(s,s.enemies.length-1);if(!s.hint)s.hint=GH.multi;}}
-    if(card.shieldBash){const bd=Math.floor(e.shield*.5);if(bd>0){dmgP(s,bd);sfx("hit");s.log.push(`🛡️💥 シールドバッシュ ${bd}dmg！`);}}
+    if(card.shieldBash){const bd=Math.floor(e.shield*.5);if(bd>0){dmgP(s,bd);sfx("hit");s.log.push(`🛡️💥 シールドバッシュ ${bd}ダメージ！`);}}
     if(card.energyDrain)s.run.energyDebt=(s.run.energyDebt||0)+card.energyDrain;
     showInt(s,i);
   }
@@ -573,7 +592,10 @@ function SoraAdventure(){
     if(beatRoi){s.meta.clears++;s.meta.bestStage=3;s.screen="ending";s.endIdx=0;return;}
     s.log.push("🎉 勝利！");s.suzuMsg=suzu("bossWin");
     const isBoss=s.enemies.some(e=>EN[e.id]?.boss);const isElite=s.enemies.some(e=>EN[e.id]?.elite);
-    const gold=isBoss?100:isElite?50:25;s.run.gold+=gold;
+    let gold=isBoss?100:isElite?50:25;
+    const _stolen=s.enemies.reduce((a,e)=>a+(e.stolen||0),0);
+    if(_stolen>0){gold+=_stolen+10;s.log.push(`💰 奪われた${_stolen}Gと慰謝料10Gを回収！`);}
+    s.run.gold+=gold;
     let relicDrop=null;
     if(isBoss){const map={momo:"ragemask",tempura:"hourglass"};const beaten=s.enemies.find(e=>EN[e.id]?.boss);const rid=map[beaten?.id];if(rid&&!hasR(s,rid))relicDrop=mr(rid);}
     else if(isElite&&Math.random()<.5&&!hasR(s,"poisonring"))relicDrop=mr("poisonring");
@@ -601,8 +623,8 @@ function SoraAdventure(){
     s.run.gold-=it.price;s.run.potions.push(it.potion);s.shopPotions.splice(idx,1);s.log=[`🧪 ${it.potion.name} を購入！`];});
   const buyRelic=()=>upd(s=>{const it=s.shopRelic;if(!it||s.run.gold<it.price)return;sfx("click");
     s.run.gold-=it.price;s.run.relics.push(it.relic);s.shopRelic=null;s.log=[`🧥 ${it.relic.name} を購入！`];});
-  const removeCard=idx=>upd(s=>{if(s.run.gold<50||s.run.deck.length<=5)return;sfx("click");
-    s.run.gold-=50;const rm=s.run.deck.splice(idx,1)[0];s.log=[`🗑️ ${rm.name} を削除！`];});
+  const removeCard=idx=>upd(s=>{const fee=s.run.stage===1?30:50;if(s.run.gold<fee||s.run.deck.length<=5)return;sfx("click");
+    s.run.gold-=fee;const rm=s.run.deck.splice(idx,1)[0];s.log=[`🗑️ ${rm.name} を削除！(-${fee}G)`];});
   const restHeal=()=>upd(s=>{sfx("heal");const a=Math.floor(s.run.maxHp*.35);s.run.hp=Math.min(s.run.hp+a,s.run.maxHp);
     s.log=[`😴 HP ${a} 回復！`];s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");});
   const restEnhance=idx=>upd(s=>{const c=s.run.deck[idx];if(!c)return;sfx("heal");
@@ -656,10 +678,10 @@ function SoraAdventure(){
         {[["⚡ エネルギー","カードを使うための力。毎ターン全回復する"],
           ["🛡️ シールド","ダメージを肩代わりする。自分のシールドは次のターンに半減、敵のは毎ターン消える"],
           ["☠️ 毒","ターン終了時に数値分のダメージを受け、その後1減る"],
-          ["🔥 炎上","毒と同じくターン終了時に数値分ダメージ。1ずつ減る"],
+          ["🔥 炎上","ターン終了時に数値分ダメージ。その後半減して消える（重ねられると初撃が痛い）"],
           ["💪 筋力","攻撃のダメージが数値分増える（敵が持つと敵の攻撃も痛くなる）"],
           ["🔄 構え（反撃）","構え中の敵を攻撃すると反撃ダメージを受ける。そのターンは攻撃を控えるのが吉"],
-          ["💔 弱体","一時的に筋力が下がる状態"],
+          ["💔 弱体","攻撃ダメージが25%減る状態。ターン経過か「浄化」で解除"],
           ["💀 呪いカード","使えないカードが手札を圧迫する。「浄化」やショップの削除で対処"],
           ["🔮 行動予告（インテント）","敵が次のターンにすること。数値は受ける予定のダメージ"]
         ].map(([k,v],i)=>(<div key={i} style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:8,marginBottom:5,fontSize:12}}><span style={{fontWeight:700}}>{k}</span><div style={{color:"#aaa",marginTop:2,fontSize:11,lineHeight:1.5}}>{v}</div></div>))}
@@ -679,6 +701,7 @@ function SoraAdventure(){
         <div style={{color:P.dim,textAlign:"center",fontSize:13,lineHeight:1.8,maxWidth:300}}>💤 もけもけ：「やあ。僕はもけもけ。この冒険の語り部...というか、見てるだけの人」</div>
         <button style={st.btn()} onClick={startRun}>冒険を始める</button>
         <button style={{...st.btn(P.accent2),fontSize:13,padding:"8px 24px"}} onClick={()=>upd(s=>{s.showHelp=true;})}>❓ あそびかた</button>
+        <div style={{color:P.dim,fontSize:10}}>📱 周回記録はこの端末に自動保存されます</div>
         <div style={{color:P.dim,fontSize:11}}>通算{gs.meta.totalRuns}周 | 最高: ステージ{gs.meta.bestStage||"—"} | クリア{gs.meta.clears}回</div>
         {gs.meta.totalRuns>0&&gs.meta.clears===0&&<div style={{fontSize:11,color:P.gold}}>🗡️ 2周目以降:「錆びた剣」でスタート</div>}
         {gs.meta.clears>0&&<div style={{fontSize:11,color:P.gold}}>🖤 クリア特典:「虚無の心臓」装備</div>}
@@ -759,7 +782,7 @@ function SoraAdventure(){
         {gs.log.length>0&&<div style={{fontSize:12,color:"#4caf50",marginBottom:8}}>{gs.log[gs.log.length-1]}</div>}
         <div style={{display:"flex",gap:8,marginBottom:10}}>
           <button style={{...st.btn(gs.shopScreen==="buy"?P.accent:"#333"),padding:"7px 14px",fontSize:13}} onClick={()=>upd(s=>{s.shopScreen="buy";})}>購入</button>
-          <button style={{...st.btn(gs.shopScreen==="remove"?"#e67e22":"#333"),padding:"7px 14px",fontSize:13}} onClick={()=>upd(s=>{s.shopScreen="remove";})}>削除(50G)</button>
+          <button style={{...st.btn(gs.shopScreen==="remove"?"#e67e22":"#333"),padding:"7px 14px",fontSize:13}} onClick={()=>upd(s=>{s.shopScreen="remove";})}>削除({run.stage===1?30:50}G)</button>
         </div>
         <div style={{fontSize:11,color:P.dim,marginBottom:10,lineHeight:1.6}}>購入: カードをデッキに追加 ／ 削除: デッキから1枚取り除く（呪いや使わないカードの整理に）</div>
         {gs.shopScreen==="buy"&&<>
