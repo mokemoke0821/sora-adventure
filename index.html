@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>ソラの大冒険</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;background:#0d0d1a;overscroll-behavior:none;}
+  *{box-sizing:border-box;}
+  #root{min-height:100dvh;}
+</style>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-type="module">
+const { useState, useCallback, useRef } = React;
+
+
+/* ═══════════════════════════════════════════
+   ソラの大冒険 — v2.0 完全版
+   全3ステージ+ろい3フェーズ+エンディング
+   レリック/ポーション/演出/効果音
+   ═══════════════════════════════════════════ */
+
+function shuffle(a){const b=[...a];for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
+function pick(a){return a[Math.floor(Math.random()*a.length)];}
+function uid(){return Math.random().toString(36).slice(2,9);}
+
+// ═══ 効果音（WebAudio合成） ═══
+let AC=null;
+function sfx(type){try{
+  AC=AC||new(window.AudioContext||window.webkitAudioContext)();
+  if(AC.state==="suspended")AC.resume();
+  const t=AC.currentTime;
+  const play=(f0,f1,dur,wave,vol,delay=0)=>{
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.connect(g);g.connect(AC.destination);
+    o.type=wave;o.frequency.setValueAtTime(f0,t+delay);
+    o.frequency.exponentialRampToValueAtTime(Math.max(1,f1),t+delay+dur);
+    g.gain.setValueAtTime(vol,t+delay);g.gain.exponentialRampToValueAtTime(.001,t+delay+dur);
+    o.start(t+delay);o.stop(t+delay+dur);};
+  if(type==="atk")play(500,180,.09,"square",.05);
+  else if(type==="hit"){play(160,60,.15,"sawtooth",.06);}
+  else if(type==="def")play(300,600,.08,"sine",.045);
+  else if(type==="heal")play(520,880,.14,"sine",.05);
+  else if(type==="click")play(900,700,.04,"sine",.03);
+  else if(type==="win"){play(523,523,.1,"triangle",.05);play(659,659,.1,"triangle",.05,.1);play(784,784,.18,"triangle",.06,.2);}
+  else if(type==="lose"){play(220,110,.3,"sawtooth",.05);play(165,82,.4,"sawtooth",.05,.15);}
+  else if(type==="phase"){play(100,400,.3,"sawtooth",.06);}
+  else if(type==="doom"){play(80,40,.6,"sawtooth",.08);}
+}catch(e){}}
+
+// ═══ ダメージ計算 ═══
+function hasR(s,id){return s.run.relics.some(r=>r.id===id);}
+function dmgE(s,idx,base,isAtk=true){
+  const e=s.enemies[idx];if(!e||e.hp<=0)return 0;
+  let d=Math.max(0,base+(s.run.str||0));
+  if(isAtk){
+    if(hasR(s,"rusty"))d+=2;
+    if(hasR(s,"ragemask")&&s.run.hp<=s.run.maxHp*.4)d=Math.floor(d*1.5);
+  }
+  if(e.shield>=d)e.shield-=d;else{e.hp-=d-e.shield;e.shield=0;}
+  if(isAtk&&hasR(s,"poisonring"))e.poison=(e.poison||0)+1;
+  addPop(s,idx,`-${d}`,"#ff5252");
+  return d;
+}
+function dmgP(s,d,src){
+  if(s.run.shield>=d)s.run.shield-=d;else{s.run.hp-=d-s.run.shield;s.run.shield=0;}
+  addPop(s,"p",`-${d}`,"#ff5252");
+  s.shakeOn=true;
+}
+function addPop(s,target,txt,color){
+  const id=uid();s.pops.push({id,target,txt,color});
+  setTimeout(()=>{const g=s;g.pops=g.pops.filter(p=>p.id!==id);g._rr&&g._rr();},900);
+}
+function draw(s,n){
+  for(let i=0;i<n;i++){
+    if(!s.battle.drawPile.length){s.battle.drawPile=shuffle(s.battle.discardPile);s.battle.discardPile=[];}
+    if(s.battle.drawPile.length)s.battle.hand.push(s.battle.drawPile.pop());
+  }
+}
+
+// ═══ カード ═══
+const EFF={
+  slash:s=>dmgE(s,s.ti,8),"slash+":s=>dmgE(s,s.ti,12),
+  combo:s=>{for(let i=0;i<3;i++)dmgE(s,s.ti,4);},"combo+":s=>{for(let i=0;i<4;i++)dmgE(s,s.ti,4);},
+  fireball:s=>{dmgE(s,s.ti,16);const e=s.enemies[s.ti];if(e)e.burn=(e.burn||0)+2;},
+  "fireball+":s=>{dmgE(s,s.ti,20);const e=s.enemies[s.ti];if(e)e.burn=(e.burn||0)+3;},
+  pierce:s=>{const e=s.enemies[s.ti];if(e){const d=20+(s.run.str||0)+(hasR(s,"rusty")?2:0);e.hp-=d;addPop(s,s.ti,`-${d}`,"#ffab40");}},
+  reckless:s=>{dmgE(s,s.ti,30);s.run.hp-=8;addPop(s,"p","-8","#ff8a65");},
+  poison:s=>{dmgE(s,s.ti,6);const e=s.enemies[s.ti];if(e)e.poison=(e.poison||0)+3;},
+  thunder:s=>{const n=Math.random()<.5?2:1;for(let i=0;i<n;i++)dmgE(s,s.ti,14);},
+  wall:s=>{s.run.shield+=8;addPop(s,"p","+8🛡️","#4fc3f7");},"wall+":s=>{s.run.shield+=12;addPop(s,"p","+12🛡️","#4fc3f7");},
+  barrier:s=>{s.run.shield+=16;addPop(s,"p","+16🛡️","#4fc3f7");},
+  counter:s=>{s.run.shield+=5;s.run.counter=8;s.log.push("🔄 カウンター構え！");},
+  fortress:s=>{s.run.shield+=30;addPop(s,"p","+30🛡️","#4fc3f7");},
+  thorns:s=>{s.run.shield+=4;s.run.thorns=3;},
+  heal:s=>{s.run.hp=Math.min(s.run.hp+12,s.run.maxHp);addPop(s,"p","+12❤️","#66bb6a");},
+  "heal+":s=>{s.run.hp=Math.min(s.run.hp+18,s.run.maxHp);addPop(s,"p","+18❤️","#66bb6a");},
+  drain:s=>{dmgE(s,s.ti,10);s.run.hp=Math.min(s.run.hp+6,s.run.maxHp);addPop(s,"p","+6❤️","#66bb6a");},
+  rage:s=>{s.run.str+=2;addPop(s,"p","💪+2","#ffd54f");},
+  accel:s=>{s.battle.energy+=1;draw(s,1);},
+  cleanse:s=>{s.run.poison=0;s.run.burn=0;s.run.weakened=0;const ci=s.battle.hand.findIndex(c=>c.type==="curse");if(ci>=0)s.battle.hand.splice(ci,1);addPop(s,"p","✨浄化","#ba68c8");},
+  scout:s=>draw(s,2),
+};
+// rarity: c=common u=uncommon r=rare
+const CM={
+  slash:{name:"斬撃",icon:"⚔️",cost:1,type:"attack",color:"#e74c3c",desc:"8ダメージ",up:"12ダメージ",upId:"slash+",r:"c"},
+  combo:{name:"連撃",icon:"⚔️",cost:1,type:"attack",color:"#e74c3c",desc:"4×3回",up:"4×4回",upId:"combo+",r:"c"},
+  fireball:{name:"火球",icon:"🔥",cost:2,type:"attack",color:"#e74c3c",desc:"16dmg+炎上2",up:"20dmg+炎上3",upId:"fireball+",r:"u"},
+  thunder:{name:"雷撃",icon:"⚡",cost:2,type:"attack",color:"#e74c3c",desc:"14dmg×1〜2回",r:"u"},
+  pierce:{name:"貫通撃",icon:"🗡️",cost:2,type:"attack",color:"#e74c3c",desc:"盾無視20",r:"u"},
+  reckless:{name:"捨て身",icon:"💀",cost:2,type:"attack",color:"#e74c3c",desc:"30dmg 自傷8",r:"u"},
+  poison:{name:"毒霧",icon:"☠️",cost:1,type:"attack",color:"#9ccc65",desc:"6dmg+毒3",r:"c"},
+  allcut:{name:"全力斬り",icon:"🌟",cost:99,type:"attack",color:"#f1c40f",desc:"手札数×12",r:"r"},
+  wall:{name:"防壁",icon:"🛡️",cost:1,type:"defend",color:"#3498db",desc:"シールド8",up:"シールド12",upId:"wall+",r:"c"},
+  barrier:{name:"結界",icon:"🛡️",cost:2,type:"defend",color:"#3498db",desc:"シールド16",r:"c"},
+  counter:{name:"カウンター",icon:"🔄",cost:1,type:"defend",color:"#3498db",desc:"盾5+反撃8",r:"u"},
+  fortress:{name:"鉄壁",icon:"🏰",cost:3,type:"defend",color:"#3498db",desc:"シールド30",r:"r"},
+  thorns:{name:"棘の鎧",icon:"🦔",cost:1,type:"defend",color:"#3498db",desc:"盾4+反射3(3T)",r:"u"},
+  heal:{name:"回復",icon:"💚",cost:2,type:"skill",color:"#2ecc71",desc:"HP12回復",up:"HP18回復",upId:"heal+",r:"c"},
+  drain:{name:"吸収",icon:"💜",cost:2,type:"skill",color:"#2ecc71",desc:"10dmg+HP6",r:"u"},
+  rage:{name:"憤怒",icon:"💪",cost:1,type:"skill",color:"#2ecc71",desc:"筋力+2(永続)",r:"u"},
+  accel:{name:"加速",icon:"⚡",cost:1,type:"skill",color:"#2ecc71",desc:"+1ドロー+1エネ",r:"u"},
+  cleanse:{name:"浄化",icon:"✨",cost:1,type:"skill",color:"#2ecc71",desc:"デバフ全解除",r:"u"},
+  scout:{name:"偵察",icon:"🔍",cost:0,type:"skill",color:"#2ecc71",desc:"2ドロー",r:"c"},
+  fatigue:{name:"疲労",icon:"💀",cost:99,type:"curse",color:"#666",desc:"使用不可",r:"x"},
+  pain:{name:"痛み",icon:"💀",cost:99,type:"curse",color:"#666",desc:"毎ターン2dmg",r:"x"},
+};
+function mc(id){const m=CM[id];if(!m)return null;return{...m,id,uid:uid(),enhanced:false};}
+function enhance(c){if(c.enhanced||!c.up)return false;c.enhanced=true;c.desc=c.up;c.name+="＋";c.id=c.upId||c.id;return true;}
+function rollReward(){
+  const pool=Object.keys(CM).filter(k=>CM[k].r!=="x"&&k!=="slash"&&k!=="wall"&&k!=="heal");
+  const w=pool.map(k=>CM[k].r==="r"?12:CM[k].r==="u"?35:53);
+  const res=[];const used=new Set();
+  while(res.length<3&&used.size<pool.length){
+    let tot=0;for(let i=0;i<pool.length;i++)if(!used.has(i))tot+=w[i];
+    let r=Math.random()*tot;
+    for(let i=0;i<pool.length;i++){if(used.has(i))continue;r-=w[i];if(r<=0){used.add(i);res.push(mc(pool[i]));break;}}
+  }
+  return res;
+}
+
+// ═══ レリック ═══
+const RELICS={
+  rusty:{name:"錆びた剣",icon:"🗡️",desc:"攻撃カード+2ダメージ"},
+  tome:{name:"魔導書",icon:"📖",desc:"ターン開始時+1ドロー"},
+  lifering:{name:"生命のリング",icon:"💍",desc:"バトル終了時HP5回復"},
+  ragemask:{name:"怒りの仮面",icon:"👺",desc:"HP40%以下で攻撃+50%"},
+  poisonring:{name:"毒の指輪",icon:"💚",desc:"攻撃時、毒1追加"},
+  mirror:{name:"鏡の盾",icon:"🪞",desc:"ターン開始時シールド4"},
+  hourglass:{name:"時の砂時計",icon:"⏳",desc:"3ターン毎にエネルギー+1"},
+  wardcharm:{name:"呪い返しの護符",icon:"🧿",desc:"呪い付与を50%で無効"},
+  firecloak:{name:"火消しの外套",icon:"🧥",desc:"炎上ダメージ半減"},
+  voidheart:{name:"虚無の心臓",icon:"🖤",desc:"最大HP-15、最大エネ+1"},
+};
+function mr(id){return{...RELICS[id],id};}
+
+// ═══ ポーション ═══
+const POTIONS={
+  healpot:{name:"回復薬",icon:"🧪",desc:"HP20回復"},
+  strpot:{name:"力の薬",icon:"💪",desc:"筋力+2"},
+  purgepot:{name:"浄化薬",icon:"✨",desc:"デバフ全解除"},
+};
+function mp(id){return{...POTIONS[id],id,uid:uid()};}
+
+// ═══ 敵 ═══
+const EN={
+  // ── S1 ──
+  mushroom:{name:"キノコ兵",icon:"🍄",hp:35,maxHp:35,
+    deck:["spore","spore","shield","toxicSpore","summonSpore"],lines:["胞子まきまき〜♪"],
+    cards:{spore:{name:"胞子アタック",dmg:7,poison:1},shield:{name:"もこもこシールド",shield:6},toxicSpore:{name:"猛毒胞子",poison:3},summonSpore:{name:"胞子召喚",summon:"miniShroom"}}},
+  miniShroom:{name:"子キノコ",icon:"🍄",hp:12,maxHp:12,summoned:true,deck:["bite","bite","puff"],lines:["にょきっ"],
+    cards:{bite:{name:"かじり",dmg:4,poison:1},puff:{name:"胞子パフ",poison:2}}},
+  mouse:{name:"盗賊ネズミ",icon:"🐭",hp:30,maxHp:30,
+    deck:["scratch","steal","scratch","callFriend","flee"],lines:["お前のゴールド、もらったァ！"],
+    cards:{scratch:{name:"ひっかき",dmg:9},steal:{name:"盗み",dmg:6,stealGold:15},flee:{name:"逃走準備",shield:5},callFriend:{name:"仲間呼び",summon:"babyMouse"}}},
+  babyMouse:{name:"子ネズミ",icon:"🐭",hp:15,maxHp:15,summoned:true,deck:["nibble","nibble","steal2"],lines:["チュー！"],
+    cards:{nibble:{name:"かじり",dmg:5},steal2:{name:"こそ泥",dmg:3,stealGold:8}}},
+  slime:{name:"迷子のスライム",icon:"🫠",hp:50,maxHp:50,shuffleEach:true,
+    deck:["splat","splat","guard","guard","split","acid"],lines:["ここどこ...？"],
+    cards:{splat:{name:"べちゃっ",dmg:11},guard:{name:"ぷるぷるガード",shield:10},split:{name:"分裂?",heal:20},acid:{name:"酸飛ばし",dmg:8,weaken:1}}},
+  sakuya:{name:"番犬さくや",icon:"⚔️",hp:100,maxHp:100,elite:true,
+    deck:["judge","stance","execute","stance","judge","mercy","stance","holy"],
+    lines:["...ご機嫌よう。通行許可証はお持ちですか？"],
+    cards:{judge:{name:"裁きの剣",dmg:12},stance:{name:"構え",shield:10,counter:14},execute:{name:"断罪",dmg:22},mercy:{name:"慈悲の手当",heal:12},holy:{name:"聖裁",dmg:16,weaken:2}}},
+  momo:{name:"毒舌の魔女もも",icon:"🖤",hp:140,maxHp:140,boss:true,
+    phase1deck:["claw","fog","claw","pot","kiss","claw","elixir"],
+    phase2deck:["fog2","claw2","convert","pot2","claw2","fog2","convert","doll"],
+    lines:["あら...勇者さん？ ふーん...普通ね"],phase2lines:["ちょっと、しぶといんだけど。褒めてないからね？"],
+    cards:{claw:{name:"毒の爪",dmg:7,poison:2},fog:{name:"猛毒の霧",poison:5},pot:{name:"呪いの壺",shield:10},elixir:{name:"回復の薬",heal:18},kiss:{name:"毒のキス",dmg:5,poison:3,weaken:1},claw2:{name:"毒の爪+",dmg:8,poison:3},fog2:{name:"猛毒の霧+",poison:6},convert:{name:"毒変換",convertPoison:3},pot2:{name:"呪いの壺+",shield:12},doll:{name:"呪いの人形",curse:"pain"}}},
+  // ── S2 ──
+  imp:{name:"炎のインプ",icon:"😈",hp:38,maxHp:38,
+    deck:["fb","fb","boom","dance","fb"],lines:["あっちっち！ 俺だけに！"],
+    cards:{fb:{name:"火炎弾",dmg:10,burn:1},boom:{name:"自爆突進",dmg:18,selfDmg:8,burn:2},dance:{name:"火の踊り",shield:5}}},
+  knight:{name:"鎧騎士",icon:"🛡️",hp:60,maxHp:60,
+    deck:["big","big","bash","big","thrust"],lines:["守りは任せろ。...攻撃？ 知らん"],
+    cards:{big:{name:"大盾",shield:14},bash:{name:"シールドバッシュ",shieldBash:true},thrust:{name:"突き",dmg:9}}},
+  cursist:{name:"呪い師",icon:"👻",hp:30,maxHp:30,
+    deck:["hand","bolt","song","bolt","hand"],lines:["呪いのカード、プレゼント〜♪"],
+    cards:{hand:{name:"呪いの手",dmg:5,curse:"fatigue"},bolt:{name:"暗黒弾",dmg:9},song:{name:"呪詛",curse:"pain"}}},
+  goliath:{name:"ゴリアテ",icon:"🦍",hp:140,maxHp:140,elite:true,
+    deck:["fist","rally","punch","fist","press","stomp","fist","rally","punch"],
+    lines:["ルールは簡単だ。俺が殴る。お前が倒れる。以上！"],
+    cards:{fist:{name:"剛拳",dmg:14},rally:{name:"鼓舞",selfStr:3},punch:{name:"豪腕",dmg:40},press:{name:"ボディプレス",dmg:20,selfDmg:5},stomp:{name:"大地踏み",shield:6}}},
+  tempura:{name:"炎将てんぷら",icon:"🔥",hp:180,maxHp:180,boss:true,
+    phase1deck:["ff","ff","pillar","armor","ff","repair","pillar"],
+    phase2deck:["bf","bf","meteor","awaken2","bf"],
+    lines:["おい！ 何だお前！ 勇者？ ふざけんな！"],phase2lines:["もういい、全力だ！ あっつ！ 俺のマントも燃えてる！"],
+    cards:{ff:{name:"炎拳",dmg:12,burn:2},pillar:{name:"火柱",dmg:8,burn:3,selfBurn:1},armor:{name:"紅蓮の鎧",shield:16},repair:{name:"自己修復",heal:22},bf:{name:"灼熱拳",dmg:20,burn:3},meteor:{name:"メテオ",dmg:38,burn:4},awaken2:{name:"灼熱覚醒",selfStr:5,selfDmg:10}}},
+  // ── S3 ──
+  mimic:{name:"ミミック",icon:"📦",hp:55,maxHp:55,
+    deck:["wait","chomp","chomp","swallow","chomp"],lines:["宝箱だよ〜 開けてみて〜 ...ガブッ"],
+    cards:{wait:{name:"待機(宝箱のふり)",nothing:true},chomp:{name:"噛みつき",dmg:16},swallow:{name:"丸呑み",dmg:26}}},
+  fallen:{name:"堕天使",icon:"👼",hp:42,maxHp:42,
+    deck:["dark","pray","wing","dark","pray"],lines:["光あれ！ ...あれ、闇が出た。まあいいか"],
+    cards:{dark:{name:"闇の光",dmg:11},pray:{name:"祈り",heal:9},wing:{name:"堕落の翼",dmg:13,shield:5}}},
+  ryusei:{name:"親衛隊長りゅうせい",icon:"🦇",hp:160,maxHp:160,elite:true,
+    deck:["blade","cstance","wave","blade","cstance","sentence","blade","dheal","cstance"],
+    lines:["...また勇者か。何人目だよ...仕事だからやるけど"],
+    cards:{blade:{name:"断罪の剣",dmg:18},cstance:{name:"カウンター構え",shield:10,counter:15},wave:{name:"闇の波動",dmg:12,weaken:1},dheal:{name:"暗黒回復",heal:12},sentence:{name:"処刑宣告",doubleNext:true}}},
+  roi:{name:"ろい神レクイエム",icon:"👿",hp:250,maxHp:250,boss:true,final:true,
+    phase1deck:["tyrant","despair","oppress","tshield","tyrant","fear"],
+    phase2deck:["awaken","rush","despair2","majesty","oppress","rush"],
+    phase3deck:["doom","dance","tshield3","dance"],
+    lines:["ようこそ我が城へ♪ お前で147人目の挑戦者♡"],
+    phase2lines:["...ほう。なかなかやるじゃん。ちょっと本気出すね♡"],
+    phase3lines:["パンの耳を捨てる者に、未来はないッ！！！"],
+    cards:{tyrant:{name:"暴虐の一撃",dmg:20},despair:{name:"絶望の布告",curse:"fatigue"},oppress:{name:"圧政",dmg:15,energyDrain:1},tshield:{name:"暴虐の盾",shield:20},fear:{name:"恐怖支配",weaken:2},
+      awaken:{name:"暴虐覚醒",selfStr:3,shield:10},rush:{name:"暴虐連撃",dmg:12,hits:2},despair2:{name:"絶望の布告",curse:"pain"},majesty:{name:"魔王の威厳",heal:25,shield:10},
+      doom:{name:"終焉宣告",doom:3},dance:{name:"暴虐乱舞",dmg:10,hits:3},tshield3:{name:"暴虐の盾+",shield:25}}},
+};
+function getED(t,ph){if(t.final)return ph>=3?t.phase3deck:ph>=2?t.phase2deck:t.phase1deck;if(t.boss)return ph>=2?t.phase2deck:t.phase1deck;return t.deck;}
+
+// ═══ 台詞 ═══
+const SUZU={
+  mapStart:["さあ冒険の始まりよ♡ わたしについてきて♡","女神パワーで最適ルートを…嘘、勘よ♡","今日のわたし、いつもより可愛くない？ …え、関係ない？"],
+  mapMove:["次はどこに行く？ わたしが導いてあげる♡","あっちは嫌な予感…でもわたしがいるから大丈夫♡","宝箱があるかも♡ 女神センサーが反応してるの♡ …嘘だけど♡"],
+  shop:["すらいむくん、わたしに割引ないの？♡","いい買い物してね♡ わたしの分も買っていいのよ？♡"],
+  rest:["にーやちゃんの休憩所ね♡ わたしも休んでいい？♡","回復と強化…女神のおすすめは…ふふ、自分で決めて♡"],
+  bossWarn1:["気をつけてソラ！ 毒使いよ！ …わたしは見てるだけだけど♡","あの子、ふわふわしてるけど毒舌よ。わたしより可愛くないけど♡"],
+  bossWarn2:["すっごい暑そう…わたし汗かきたくないから遠くで見てるわ♡","炎使いって聞くとかっこいいけど、宇宙服なのよね…♡"],
+  bossWarn3:["ついに魔王城…♡ 大丈夫、わたしの祝福があるから♡ …気持ちの問題だけど♡","ろい神…税率98%の元凶ね。倒したら女神税0%にしてあげる♡ 元々ないけど♡"],
+  bossWin:["やるじゃない♡ 女神のご加護のおかげね♡","すごい！ …まあわたしが導いたからだけど♡","勝った♡ ほら、わたしに感謝して？ してして♡"],
+  elite:["強そうな敵ね…わたしが応援してあげる♡ 後ろから♡","がんばれー♡ わたしは安全なとこにいるから♡"],
+  battleHint:["ソラ、シールド忘れてない？♡ 女神からのアドバイス♡","その敵、溜めてるわよ♡ …フラグじゃないわよ♡"],
+  stageUp:["次のステージね♡ わたしの導きについてきて♡","新しい冒険♡ 女神としてわくわくしてるの♡ …ほんとよ？♡"],
+  counterTip:["あ、構えてるわ♡ 攻撃しちゃダメよ♡ 女神の勘！","反撃される構えね♡ わたしなら…見てるだけだけど♡"],
+  treasure:["宝箱♡ 女神パワーで中身を…占えないけど♡ 開けて♡"],
+  event:["なにかありそう♡ 女神の直感よ♡ …外れても責任取らないけど♡"],
+};
+function suzu(c){return pick(SUZU[c]||SUZU.mapMove);}
+const MOKE={
+  stage2:"もけもけ：「ソラは森を抜けた。次は灼熱のコロシアム。...暑いの苦手なんだよね、僕。まあ行かないけど」",
+  stage3:"もけもけ：「ついに魔王城。147人の勇者が散った場所。...ソラで148人目にならないといいね。他人事だけど」",
+};
+const GH={poison:"毒が溜まってるぞ。浄化か回復しろ",lowHp:"死にたいのか？ シールド張れ",counter:"やめとけ。「構え」中だ、反撃喰らうぞ",phase:"来るぞ。構えろ",weak:"筋力下げられたな。憤怒で取り返せ",multi:"敵が増えたぞ。タップで攻撃先を変えろ",charge:"溜めてるぞ。次のターン大技が来る",burn:"炎上が重なってるぞ",doom:"即死タイマーだ！ 3ターン以内に削りきれ！！",double:"次の攻撃2倍が来るぞ。シールド最大まで積め",mimic:"そいつ宝箱じゃないぞ。2ターン目から本気出す"};
+const GD=["毒で死んだな。浄化カードを入れとけ","火力不足だ。筋力バフを積め","シールド張ってないだろ。防御カード使え","デバフ放置したな。浄化で解除しろ","敵が複数いたら召喚元を先に倒せ","カウンター構え中に殴るな","炎上で溶けたな。火消しの外套があると楽だぞ","豪腕は3ターン周期だ。覚えろ","終焉宣告されたら全力で削れ。防御は捨てろ","処刑宣告→断罪のコンボは36超え。鉄壁を合わせろ"];
+const RT=["だっっっさ！ 何そのプレイ！","もっかい来なよ♪ 次はマシなプレイ見せてよね！","見てるこっちが恥ずかしいんだけど！","お前で148人目♪ ...全員負けてるけどね♡"];
+const ROI_BATTLE=["ろい「ていうかお前、カード切るタイミング下手すぎ」","ろい「そこは防御でしょ！ 見てらんない！」","ろい「ヒマだから相手してあげてるの♪ 感謝して？」","ろい「わたしの税率政策、悪くないと思うんだけどなー」"];
+
+// ═══ マップ ═══
+const SN={1:"もだえの森",2:"灼熱のコロシアム",3:"虚無の王城"};
+const SP={1:["mushroom","mouse","slime"],2:["imp","knight","cursist"],3:["mimic","fallen","cursist"]};
+const SE={1:"sakuya",2:"goliath",3:"ryusei"};
+const SB={1:"momo",2:"tempura",3:"roi"};
+function genMap(stage){
+  const rows=stage===1?7:stage===2?8:9;const map=[];const pool=SP[stage];
+  for(let i=0;i<rows;i++){
+    if(i===rows-1){map.push([{type:"boss",id:SB[stage]}]);continue;}
+    if(i===0){map.push([{type:"battle",enemyPool:pool}]);continue;}
+    const nodes=[];const cnt=2+Math.floor(Math.random()*2);
+    for(let j=0;j<cnt;j++){const r=Math.random();
+      if(r<.30)nodes.push({type:"battle",enemyPool:pool});
+      else if(r<.44)nodes.push({type:"elite",id:SE[stage]});
+      else if(r<.58)nodes.push({type:"event"});
+      else if(r<.72)nodes.push({type:"rest"});
+      else if(r<.86)nodes.push({type:"shop"});
+      else nodes.push({type:"treasure"});}
+    map.push(nodes);
+  }
+  return map;
+}
+function initDeck(){const d=[];for(let i=0;i<4;i++)d.push(mc("slash"));for(let i=0;i<4;i++)d.push(mc("wall"));for(let i=0;i<2;i++)d.push(mc("heal"));return d;}
+
+// ═══ 寸劇 ═══
+function skitLines(tmpl,type){
+  const n=tmpl.name;
+  if(n.includes("もも"))return[
+    {ch:"🤓",nm:"ソラ",tx:"ここが...ボスの部屋..."},
+    {ch:"🐑",nm:"すず",tx:suzu("bossWarn1")},
+    {ch:tmpl.icon,nm:n,tx:tmpl.lines[0]},
+    {ch:"🤓",nm:"ソラ",tx:"す、すみません...勇者です..."},
+    {ch:tmpl.icon,nm:n,tx:"まあいいわ。普通に倒しちゃうけど♪"},
+    {ch:"🐑",nm:"すず",tx:"女神のご加護を───"},
+    {ch:tmpl.icon,nm:n,tx:"...あなた女神？ どう見ても魔族じゃない？"},
+    {ch:"🐑",nm:"すず",tx:"女神ですーーー！！！"}];
+  if(n.includes("てんぷら"))return[
+    {ch:"🤓",nm:"ソラ",tx:"暑い...ここがコロシアム..."},
+    {ch:"🐑",nm:"すず",tx:suzu("bossWarn2")},
+    {ch:tmpl.icon,nm:n,tx:"おい！ 何だお前！ 勇者？ ふざけんな、俺の昼休みだぞ！"},
+    {ch:"🤓",nm:"ソラ",tx:"あの、すみません...お昼時にお邪魔して..."},
+    {ch:tmpl.icon,nm:n,tx:"...まあいい。ぶっ飛ばしてから飯にするか！"},
+    {ch:"🐑",nm:"すず",tx:"宇宙服なのに炎使い...ツッコんでいい？♡"},
+    {ch:tmpl.icon,nm:n,tx:"うるせー！ カッコいいだろ！ ふざけんな！"},
+    {ch:"🐑",nm:"すず",tx:"怒りっぽいわね♡ 可愛く応援してるから♡"}];
+  if(n.includes("ろい"))return[
+    {ch:"🤓",nm:"ソラ",tx:"ここが...魔王の玉座..."},
+    {ch:"🐑",nm:"すず",tx:suzu("bossWarn3")},
+    {ch:tmpl.icon,nm:n,tx:"ようこそ我が城へ、勇者...ソラとか言ったっけ？"},
+    {ch:tmpl.icon,nm:n,tx:"お前で147人目の挑戦者♪ 記念に特別サービスしてあげる♡"},
+    {ch:"🤓",nm:"ソラ",tx:"それ嬉しくないやつですよね..."},
+    {ch:tmpl.icon,nm:n,tx:"ていうかお前、ここまでのプレイひどかったよ？ 見てたんだけど"},
+    {ch:"🤓",nm:"ソラ",tx:"魔王が勇者のプレイ見てるんですか！？"},
+    {ch:tmpl.icon,nm:n,tx:"だってヒマなんだもん♪ あとお前がカード切るタイミングマジで下手"},
+    {ch:"🤓",nm:"ソラ",tx:"ほっといてください！"},
+    {ch:"🐑",nm:"すず",tx:"ソラ、あの魔王を倒せば税率98%が終わるわ♡"},
+    {ch:tmpl.icon,nm:n,tx:"わたしの政策を否定するなーっ！！ 行くよ♡"}];
+  if(type==="elite")return[
+    {ch:"🤓",nm:"ソラ",tx:"え、あの...通してもらえませんか...？"},
+    {ch:tmpl.icon,nm:n,tx:tmpl.lines[0]},
+    {ch:"🐑",nm:"すず",tx:suzu("elite")},
+    {ch:tmpl.icon,nm:n,tx:"...始めましょう"}];
+  return[{ch:tmpl.icon,nm:n,tx:tmpl.lines[0]}];
+}
+
+const P={bg:"#0d0d1a",accent:"#e94560",accent2:"#0f3460",gold:"#f5c518",text:"#eaeaea",dim:"#777",hpBar:"#c62828",cardBg:"#16213e",panelBg:"rgba(13,13,26,0.95)"};
+const CSS=`
+@keyframes popUp{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-34px);opacity:0}}
+@keyframes shakeA{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+@keyframes cardIn{0%{transform:translateY(14px);opacity:0}100%{transform:translateY(0);opacity:1}}
+@keyframes fadeIn{0%{opacity:0}100%{opacity:1}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.pop{position:absolute;font-weight:900;font-size:16px;animation:popUp .85s ease-out forwards;pointer-events:none;text-shadow:0 1px 3px #000;z-index:5}
+.shake{animation:shakeA .35s ease}
+.cardin{animation:cardIn .22s ease}
+.fadein{animation:fadeIn .3s ease}
+.doomP{animation:pulse .8s infinite;color:#ff1744}
+`;
+
+// ════════════════════════════════════════
+function SoraAdventure(){
+  const gsRef=useRef({
+    screen:"title",run:null,battle:null,enemies:[],ti:0,
+    meta:{totalRuns:0,bestStage:0,clears:0},log:[],reward:null,hint:null,suzuMsg:"",mokeMsg:"",roiMsg:"",
+    skit:null,skitIdx:0,skitEid:null,goTaunt:"",goAdvice:"",
+    shopCards:[],shopPotions:[],shopRelic:null,shopScreen:null,restChoice:null,
+    pops:[],shakeOn:false,showDeck:false,endIdx:0,_rr:null,
+  });
+  const[tick,setTick]=useState(0);const gs=gsRef.current;
+  const rr=useCallback(()=>setTick(t=>t+1),[]);
+  gs._rr=rr;
+  const upd=useCallback(fn=>{fn(gsRef.current);rr();},[rr]);
+
+  function makeE(eid){const t=EN[eid];if(!t)return null;
+    return{id:eid,name:t.name,icon:t.icon,hp:t.hp,maxHp:t.maxHp,shield:0,deckIdx:0,phase:1,poison:0,burn:0,str:0,intent:null,counterStance:0,summoned:t.summoned||false,doom:0,doubleNext:false};}
+  function showInt(s,i){const e=s.enemies[i];if(!e||e.hp<=0)return;const t=EN[e.id];if(!t)return;
+    const dk=getED(t,e.phase);if(!dk||!dk.length){e.intent=null;return;}
+    if(t.shuffleEach)e.intent=t.cards[pick(dk)]||null;else e.intent=t.cards[dk[e.deckIdx%dk.length]]||null;}
+  function showAllInt(s){s.enemies.forEach((_,i)=>{if(s.enemies[i].hp>0)showInt(s,i);});}
+
+  function initBattle(s,eid){
+    const t=EN[eid];if(!t)return;
+    s.screen="battle";
+    s.battle={hand:[],drawPile:shuffle(s.run.deck),discardPile:[],energy:s.run.maxEnergy,turn:1};
+    s.enemies=[makeE(eid)];s.ti=0;
+    s.run.shield=0;s.run.counter=0;s.run.thorns=0;s.run.weakened=0;s.run.energyDebt=0;
+    s.log=[`${t.icon} ${t.name} が現れた！`];s.hint=eid==="mimic"?GH.mimic:null;s.roiMsg="";
+    if(hasR(s,"mirror")){s.run.shield+=4;}
+    draw(s,5+(hasR(s,"tome")?1:0));
+    showAllInt(s);
+  }
+
+  const startRun=()=>upd(s=>{
+    sfx("click");
+    s.screen="map";s.meta.totalRuns++;
+    const relics=[];let maxHp=80,maxEnergy=3;
+    if(s.meta.totalRuns>1)relics.push(mr("rusty"));
+    if(s.meta.clears>0){relics.push(mr("voidheart"));maxHp-=15;maxEnergy+=1;}
+    s.run={stage:1,row:0,deck:initDeck(),relics,potions:[mp("healpot")],gold:50,hp:maxHp,maxHp,energy:maxEnergy,maxEnergy,
+      str:0,shield:0,poison:0,burn:0,counter:0,thorns:0,weakened:0,energyDebt:0,map:genMap(1)};
+    s.enemies=[];s.log=[];s.suzuMsg=suzu("mapStart");s.mokeMsg="";
+    if(s.meta.totalRuns>1)s.log=["🗡️ 周回ボーナス:「錆びた剣」を装備して開始！"];
+  });
+
+  const selectNode=node=>upd(s=>{
+    sfx("click");
+    if(node.type==="battle"){initBattle(s,pick(node.enemyPool||["mushroom"]));s.suzuMsg=pick(["がんばって♡","女神が見守ってるわ♡","弱そうね♡ …たぶん♡"]);}
+    else if(node.type==="elite"||node.type==="boss"){
+      const eid=node.id;const t=EN[eid];if(!t){initBattle(s,eid);return;}
+      s.skit=skitLines(t,node.type);s.skitIdx=0;s.skitEid=eid;s.screen="skit";}
+    else if(node.type==="rest"){s.restChoice=null;s.screen="rest";s.suzuMsg=suzu("rest");}
+    else if(node.type==="shop"){
+      const pool=Object.keys(CM).filter(k=>CM[k].r!=="x");
+      s.shopCards=shuffle(pool).slice(0,4).map(id=>({card:mc(id),price:CM[id].r==="r"?70:CM[id].r==="u"?50:35}));
+      s.shopPotions=shuffle(Object.keys(POTIONS)).slice(0,2).map(id=>({potion:mp(id),price:30}));
+      s.shopRelic=Math.random()<.4&&!hasR(s,"firecloak")?{relic:mr("firecloak"),price:120}:null;
+      s.shopScreen="buy";s.screen="shop";s.suzuMsg=suzu("shop");}
+    else if(node.type==="event"){
+      const r=Math.random();
+      if(r<.3){s.run.hp=Math.min(s.run.hp+15,s.run.maxHp);s.log=["🏚️ 祠で祈りを捧げた。HP15回復"];}
+      else if(r<.55){s.run.gold+=30;s.log=["🐱 ゴミカス「拾い物だ。持ってけ」 +30G"];}
+      else if(r<.8){const c=mc(pick(["counter","cleanse","rage","thorns","thunder"]));s.run.deck.push(c);s.log=[`🐱 ゴミカス「いらんから持ってけ」 ${c.name}を入手！`];}
+      else{if(s.run.potions.length<3){const p=mp(pick(Object.keys(POTIONS)));s.run.potions.push(p);s.log=[`🔮 魔法の泉で ${p.name} を瓶詰め！`];}else{s.run.gold+=20;s.log=["🔮 泉で20G拾った"];}}
+      s.run.row++;s.suzuMsg=suzu("event");}
+    else if(node.type==="treasure"){
+      const pool=["tome","lifering","mirror","wardcharm","poisonring"].filter(id=>!hasR(s,id));
+      if(pool.length){const r=mr(pick(pool));s.run.relics.push(r);s.log=[`📦 宝箱！ ${r.icon}${r.name}(${r.desc})を入手！`];}
+      else{s.run.gold+=50;s.log=["📦 宝箱！ +50G"];}
+      s.run.row++;s.suzuMsg=suzu("treasure");}
+  });
+
+  const advSkit=()=>upd(s=>{if(!s.skit)return;
+    sfx("click");
+    if(s.skitIdx<s.skit.length-1)s.skitIdx++;
+    else{const eid=s.skitEid;s.skit=null;s.skitIdx=0;s.skitEid=null;initBattle(s,eid);}});
+  const skipSkit=(ev)=>{ev.stopPropagation();upd(s=>{if(!s.skit)return;const eid=s.skitEid;s.skit=null;s.skitIdx=0;s.skitEid=null;initBattle(s,eid);});};
+
+  // ═══ ポーション ═══
+  const usePotion=idx=>upd(s=>{
+    if(s.screen!=="battle")return;
+    const p=s.run.potions[idx];if(!p)return;
+    s.run.potions.splice(idx,1);
+    if(p.id==="healpot"){s.run.hp=Math.min(s.run.hp+20,s.run.maxHp);addPop(s,"p","+20❤️","#66bb6a");sfx("heal");}
+    else if(p.id==="strpot"){s.run.str+=2;addPop(s,"p","💪+2","#ffd54f");sfx("heal");}
+    else if(p.id==="purgepot"){s.run.poison=0;s.run.burn=0;s.run.weakened=0;addPop(s,"p","✨浄化","#ba68c8");sfx("heal");}
+    s.log.push(`🧪 ${p.name} を使用！`);
+  });
+
+  // ═══ カード使用 ═══
+  const playCard=idx=>upd(s=>{
+    if(s.screen!=="battle"||!s.battle)return;
+    const card=s.battle.hand[idx];if(!card||card.type==="curse")return;
+    let cost=card.id==="allcut"?s.battle.energy:card.cost;
+    if(cost>s.battle.energy||(card.id==="allcut"&&cost===0))return;
+    while(s.ti<s.enemies.length&&s.enemies[s.ti].hp<=0)s.ti=(s.ti+1)%s.enemies.length;
+    const tgt=s.enemies[s.ti];
+    if(tgt?.counterStance>0&&card.type==="attack"){s.hint=GH.counter;s.suzuMsg=suzu("counterTip");}
+    s.battle.energy-=cost;s.battle.hand.splice(idx,1);
+    sfx(card.type==="attack"?"atk":card.type==="defend"?"def":"heal");
+    if(card.id==="allcut"){const n=s.battle.hand.length+1;dmgE(s,s.ti,n*12);s.battle.discardPile.push(...s.battle.hand.splice(0));}
+    else{const f=EFF[card.id];if(f)f(s);}
+    if(card.type==="attack"&&tgt&&tgt.hp>0&&tgt.counterStance>0){
+      dmgP(s,tgt.counterStance);sfx("hit");
+      s.log.push(`🔄💥 ${tgt.name}の反撃発動！ ${tgt.counterStance}ダメージ！`);}
+    s.battle.discardPile.push(card);s.log.push(`⚔️ ${card.name} → ${tgt?.name||"?"}`);
+    if(!s.hint&&s.run.poison>=5)s.hint=GH.poison;
+    if(!s.hint&&s.run.burn>=4)s.hint=GH.burn;
+    if(!s.hint&&s.run.hp<=s.run.maxHp*.25&&card.type==="attack")s.hint=GH.lowHp;
+    if(s.enemies.every(e=>e.hp<=0))onWin(s);
+  });
+
+  // ═══ ターン終了 ═══
+  const endTurn=()=>upd(s=>{
+    if(s.screen!=="battle"||!s.battle)return;
+    sfx("click");
+    s.run.shield=Math.floor(s.run.shield/2);s.run.counter=0;
+    for(let i=0;i<s.enemies.length;i++){if(s.enemies[i].hp<=0)continue;enemyAct(s,i);if(s.run.hp<=0){onLose(s);return;}}
+    if(s.enemies.every(e=>e.hp<=0)){onWin(s);return;}
+    // プレイヤーDOT
+    if(s.run.poison>0){s.run.hp-=s.run.poison;addPop(s,"p",`☠️-${s.run.poison}`,"#9ccc65");s.run.poison=Math.max(0,s.run.poison-1);}
+    if(s.run.burn>0){const bd=hasR(s,"firecloak")?Math.ceil(s.run.burn/2):s.run.burn;s.run.hp-=bd;addPop(s,"p",`🔥-${bd}`,"#ff8a65");s.run.burn=Math.max(0,s.run.burn-1);}
+    if(s.run.weakened>0)s.run.weakened--;
+    s.battle.hand.forEach(c=>{if(c.id==="pain")s.run.hp-=2;});
+    if(s.run.thorns>0)s.run.thorns--;
+    if(s.run.hp<=0){onLose(s);return;}
+    // 敵DOT
+    s.enemies.forEach(e=>{if(e.hp<=0)return;
+      if(e.poison>0){e.hp-=e.poison;e.poison=Math.max(0,e.poison-1);}
+      if(e.burn>0){e.hp-=e.burn;e.burn=Math.max(0,e.burn-1);}});
+    if(s.enemies.every(e=>e.hp<=0)){onWin(s);return;}
+    // 新ターン
+    s.battle.turn++;
+    s.battle.energy=Math.max(0,s.run.maxEnergy-(s.run.energyDebt||0));
+    if(s.run.energyDebt>0){s.log.push(`⚡ 圧政でエネルギー-${s.run.energyDebt}...`);s.run.energyDebt=0;}
+    if(hasR(s,"hourglass")&&s.battle.turn%3===0){s.battle.energy+=1;s.log.push("⏳ 砂時計: エネルギー+1");}
+    s.battle.discardPile.push(...s.battle.hand.splice(0));
+    s.enemies.forEach(e=>{if(e.hp>0){e.shield=0;e.counterStance=0;}});
+    if(hasR(s,"mirror"))s.run.shield+=4;
+    // Phase移行
+    s.enemies.forEach(e=>{if(e.hp<=0)return;const t=EN[e.id];
+      if(!t?.boss)return;
+      if(t.final){
+        if(e.phase===1&&e.hp<=e.maxHp*.6){e.phase=2;e.deckIdx=0;e.str+=2;s.log.push(`⚠️ ${e.name}「${t.phase2lines[0]}」`);s.hint=GH.phase;sfx("phase");}
+        else if(e.phase===2&&e.hp<=e.maxHp*.25){e.phase=3;e.deckIdx=0;s.log.push(`💀 ${e.name}「${t.phase3lines[0]}」`);s.hint=GH.doom;sfx("doom");}
+      }else if(e.phase===1&&e.hp<=e.maxHp*.5){e.phase=2;e.deckIdx=0;e.str+=3;s.log.push(`⚠️ ${e.name}「${t.phase2lines?.[0]||"..."}」`);s.hint=GH.phase;sfx("phase");}
+    });
+    // てんぷらP2灼熱フィールド
+    s.enemies.forEach(e=>{if(e.hp>0&&e.id==="tempura"&&e.phase===2){dmgP(s,10);s.log.push("🔥 灼熱フィールド！ 10ダメージ！");}});
+    if(s.run.hp<=0){onLose(s);return;}
+    draw(s,5+(hasR(s,"tome")?1:0));
+    if(s.hint!==GH.phase&&s.hint!==GH.doom)s.hint=null;
+    if(s.enemies[s.ti]?.hp<=0){const a=s.enemies.findIndex(e=>e.hp>0);if(a>=0)s.ti=a;}
+    showAllInt(s);
+    // ろいのダメ出し / すず
+    if(s.enemies.some(e=>e.id==="roi"&&e.hp>0)&&Math.random()<.35)s.roiMsg=pick(ROI_BATTLE);
+    else s.roiMsg="";
+    if(Math.random()<.2)s.suzuMsg=suzu("battleHint");
+    // シェイクリセット
+    setTimeout(()=>{gsRef.current.shakeOn=false;rr();},400);
+  });
+
+  function enemyAct(s,i){
+    const e=s.enemies[i];const t=EN[e.id];if(!t)return;
+    // 終焉タイマー
+    if(e.doom>0){
+      e.doom--;
+      if(e.doom===0){s.log.push("💀💀💀 終焉！！！");dmgP(s,999);sfx("doom");return;}
+      s.log.push(`⏳ 終焉まであと${e.doom}ターン！！`);
+    }
+    const dk=getED(t,e.phase);if(!dk||!dk.length)return;
+    let cardId;if(t.shuffleEach)cardId=pick(dk);else cardId=dk[e.deckIdx%dk.length];
+    const card=t.cards[cardId];e.deckIdx++;if(!card)return;
+    s.log.push(`${e.icon} ${card.name}！`);
+    if(card.nothing)return void showInt(s,i);
+    if(card.dmg){
+      let d=card.dmg+(e.str||0);
+      const hits=card.hits||1;
+      if(e.doubleNext){d*=2;e.doubleNext=false;s.log.push("💥 処刑執行！ ダメージ2倍！");}
+      for(let h=0;h<hits;h++){dmgP(s,d);sfx("hit");}
+      if(s.run.counter>0){if(e.shield>=s.run.counter)e.shield-=s.run.counter;else{e.hp-=s.run.counter-e.shield;e.shield=0;}
+        addPop(s,i,`-${s.run.counter}`,"#4fc3f7");s.log.push(`🔄✨ カウンター発動！ ${s.run.counter}反撃！`);}
+      if(s.run.thorns>0){e.hp-=s.run.thorns;addPop(s,i,`-${s.run.thorns}`,"#4fc3f7");}
+    }
+    if(card.shield)e.shield+=card.shield;
+    if(card.counter){e.counterStance=card.counter;s.log.push(`🔄 ${e.name}が構えた！ 攻撃すると${card.counter}反撃！`);}
+    else if(!card.counter)e.counterStance=0;
+    if(card.heal){e.hp=Math.min(e.hp+card.heal,e.maxHp);addPop(s,i,`+${card.heal}`,"#66bb6a");}
+    if(card.poison)s.run.poison+=card.poison;
+    if(card.burn)s.run.burn+=card.burn;
+    if(card.weaken){s.run.weakened+=card.weaken;s.log.push(`💔 弱体化 ${card.weaken}T！`);}
+    if(card.selfStr){e.str+=card.selfStr;s.log.push(`💪 ${e.name}の筋力+${card.selfStr}！`);if(card.selfStr>=3&&!s.hint)s.hint=GH.charge;}
+    if(card.selfDmg)e.hp-=card.selfDmg;
+    if(card.selfBurn)e.burn=(e.burn||0)+card.selfBurn;
+    if(card.doubleNext){e.doubleNext=true;s.hint=GH.double;s.log.push(`⚠️ ${e.name}の次の攻撃はダメージ2倍！`);}
+    if(card.doom){e.doom=card.doom+1;s.hint=GH.doom;s.log.push(`💀 終焉宣告！！ ${card.doom}ターン後に999ダメージ！！`);sfx("doom");}
+    if(card.stealGold){s.run.gold=Math.max(0,s.run.gold-card.stealGold);s.log.push(`💰 ${card.stealGold}G奪われた！`);}
+    if(card.curse){
+      if(hasR(s,"wardcharm")&&Math.random()<.5){s.log.push("🧿 護符が呪いを弾いた！");}
+      else{const c=mc(card.curse);if(c){s.battle.discardPile.push(c);s.log.push(`💀 呪い「${c.name}」が混入！`);}}}
+    if(card.convertPoison&&s.run.poison>0){const cv=s.run.poison*card.convertPoison;s.log.push(`☠️ 毒変換！ ${cv}dmg！`);dmgP(s,cv);sfx("hit");s.run.poison=0;}
+    if(card.summon&&s.enemies.length<3){const ne=makeE(card.summon);if(ne){s.enemies.push(ne);s.log.push(`${ne.icon} ${ne.name} が現れた！`);showInt(s,s.enemies.length-1);if(!s.hint)s.hint=GH.multi;}}
+    if(card.shieldBash){const bd=Math.floor(e.shield*.5);if(bd>0){dmgP(s,bd);sfx("hit");s.log.push(`🛡️💥 シールドバッシュ ${bd}dmg！`);}}
+    if(card.energyDrain)s.run.energyDebt=(s.run.energyDebt||0)+card.energyDrain;
+    showInt(s,i);
+  }
+
+  function onWin(s){
+    sfx("win");
+    if(hasR(s,"lifering")){s.run.hp=Math.min(s.run.hp+5,s.run.maxHp);}
+    const beatRoi=s.enemies.some(e=>e.id==="roi");
+    if(beatRoi){s.meta.clears++;s.meta.bestStage=3;s.screen="ending";s.endIdx=0;return;}
+    s.log.push("🎉 勝利！");s.suzuMsg=suzu("bossWin");
+    const isBoss=s.enemies.some(e=>EN[e.id]?.boss);const isElite=s.enemies.some(e=>EN[e.id]?.elite);
+    const gold=isBoss?100:isElite?50:25;s.run.gold+=gold;
+    let relicDrop=null;
+    if(isBoss){const map={momo:"ragemask",tempura:"hourglass"};const beaten=s.enemies.find(e=>EN[e.id]?.boss);const rid=map[beaten?.id];if(rid&&!hasR(s,rid))relicDrop=mr(rid);}
+    else if(isElite&&Math.random()<.5&&!hasR(s,"poisonring"))relicDrop=mr("poisonring");
+    if(relicDrop){s.run.relics.push(relicDrop);}
+    if(isBoss&&s.run.potions.length<3)s.run.potions.push(mp(pick(Object.keys(POTIONS))));
+    s.reward={cards:rollReward(),gold,isBoss,relicDrop};s.screen="reward";
+  }
+  function onLose(s){sfx("lose");s.screen="gameOver";s.meta.bestStage=Math.max(s.meta.bestStage,s.run?.stage||1);s.goTaunt=pick(RT);s.goAdvice=pick(GD);}
+
+  const pickReward=card=>upd(s=>{
+    sfx("click");
+    if(card)s.run.deck.push(card);
+    const wasBoss=s.reward?.isBoss;s.reward=null;
+    if(wasBoss&&s.run.stage<3){
+      s.run.stage++;s.run.row=0;s.run.map=genMap(s.run.stage);
+      s.suzuMsg=suzu("stageUp");s.mokeMsg=s.run.stage===2?MOKE.stage2:MOKE.stage3;
+      s.log=[`🎉 ステージ${s.run.stage}「${SN[s.run.stage]}」へ！`];
+    }else{s.run.row++;s.mokeMsg="";}
+    s.screen="map";s.hint=null;
+  });
+
+  const buyCard=idx=>upd(s=>{const it=s.shopCards[idx];if(!it||s.run.gold<it.price)return;sfx("click");
+    s.run.gold-=it.price;s.run.deck.push(it.card);s.shopCards.splice(idx,1);s.log=[`🛡️ ${it.card.name} を購入！`];});
+  const buyPotion=idx=>upd(s=>{const it=s.shopPotions[idx];if(!it||s.run.gold<it.price||s.run.potions.length>=3)return;sfx("click");
+    s.run.gold-=it.price;s.run.potions.push(it.potion);s.shopPotions.splice(idx,1);s.log=[`🧪 ${it.potion.name} を購入！`];});
+  const buyRelic=()=>upd(s=>{const it=s.shopRelic;if(!it||s.run.gold<it.price)return;sfx("click");
+    s.run.gold-=it.price;s.run.relics.push(it.relic);s.shopRelic=null;s.log=[`🧥 ${it.relic.name} を購入！`];});
+  const removeCard=idx=>upd(s=>{if(s.run.gold<50||s.run.deck.length<=5)return;sfx("click");
+    s.run.gold-=50;const rm=s.run.deck.splice(idx,1)[0];s.log=[`🗑️ ${rm.name} を削除！`];});
+  const restHeal=()=>upd(s=>{sfx("heal");const a=Math.floor(s.run.maxHp*.35);s.run.hp=Math.min(s.run.hp+a,s.run.maxHp);
+    s.log=[`😴 HP ${a} 回復！`];s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");});
+  const restEnhance=idx=>upd(s=>{const c=s.run.deck[idx];if(!c)return;sfx("heal");
+    if(enhance(c))s.log=[`✨ ${c.name}に強化！`];else s.log=["😴 にーや「もう強い...zzz」"];
+    s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");});
+
+  // ═══ 共通UI ═══
+  const st={
+    wrap:{width:"100%",maxWidth:480,margin:"0 auto",minHeight:"100dvh",background:P.bg,color:P.text,fontFamily:"'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif",userSelect:"none",WebkitUserSelect:"none"},
+    btn:(bg=P.accent)=>({padding:"12px 24px",background:bg,color:"#fff",border:"none",borderRadius:8,fontSize:16,fontWeight:700,cursor:"pointer",touchAction:"manipulation",WebkitTapHighlightColor:"transparent"}),
+    card:(ok,color)=>({minWidth:74,maxWidth:84,flexShrink:0,background:ok?P.cardBg:"#111",
+      border:`2px solid ${ok?color||"#333":"#333"}`,borderRadius:10,padding:6,
+      display:"flex",flexDirection:"column",alignItems:"center",gap:3,
+      cursor:ok?"pointer":"not-allowed",opacity:ok?1:.5,touchAction:"manipulation",
+      boxShadow:ok?`0 0 8px ${color}44`:"none"}),
+    suzuBox:{background:"rgba(233,69,96,0.06)",borderRadius:8,padding:8,fontSize:12,borderLeft:"3px solid #e94560"},
+  };
+  const rarityBadge=r=>r==="r"?"🟡":r==="u"?"🔵":"⚪";
+
+  const DeckModal=()=>gs.showDeck?(
+    <div className="fadein" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:50,display:"flex",flexDirection:"column",padding:16,maxWidth:480,margin:"0 auto"}}
+      onClick={()=>upd(s=>{s.showDeck=false;})}>
+      <div style={{fontSize:15,fontWeight:700,marginBottom:10,color:"#fff"}}>🃏 デッキ ({gs.run?.deck.length}枚) — タップで閉じる</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",overflowY:"auto"}}>
+        {gs.run?.deck.map(c=>(<div key={c.uid} style={{background:P.cardBg,border:`1px solid ${c.color}`,borderRadius:8,padding:6,minWidth:64,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+          <div style={{fontSize:15}}>{c.icon}</div><div style={{fontSize:9,color:c.color,fontWeight:700}}>{c.name}</div><div style={{fontSize:8,color:P.dim}}>{c.desc}</div>
+        </div>))}
+      </div>
+      {gs.run?.relics.length>0&&<><div style={{fontSize:13,fontWeight:700,margin:"12px 0 6px",color:"#fff"}}>🏺 レリック</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        {gs.run.relics.map((r,i)=>(<div key={i} style={{background:"#1a1a2e",border:"1px solid #f5c518",borderRadius:8,padding:6,fontSize:10}}>{r.icon} {r.name}<div style={{fontSize:8,color:P.dim}}>{r.desc}</div></div>))}
+      </div></>}
+    </div>):null;
+
+  const Pops=({target})=>(<>{gs.pops.filter(p=>p.target===target).map((p,i)=>(
+    <div key={p.id} className="pop" style={{color:p.color,right:8+i*22,top:4}}>{p.txt}</div>))}</>);
+
+  // ══ TITLE ══
+  if(gs.screen==="title")return(
+    <div style={st.wrap}><style>{CSS}</style>
+      <div className="fadein" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100dvh",gap:22,padding:20}}>
+        <div style={{fontSize:13,color:P.dim,letterSpacing:2}}>ローグライト・デッキ構築カードバトル</div>
+        <div style={{fontSize:38,fontWeight:900,background:`linear-gradient(135deg,${P.accent},${P.gold})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",textAlign:"center"}}>ソラの大冒険</div>
+        <div style={{fontSize:48}}>🤓⚔️👿</div>
+        <div style={{color:P.dim,textAlign:"center",fontSize:13,lineHeight:1.8,maxWidth:300}}>💤 もけもけ：「やあ。僕はもけもけ。この冒険の語り部...というか、見てるだけの人」</div>
+        <button style={st.btn()} onClick={startRun}>冒険を始める</button>
+        <div style={{color:P.dim,fontSize:11}}>通算{gs.meta.totalRuns}周 | 最高: ステージ{gs.meta.bestStage||"—"} | クリア{gs.meta.clears}回</div>
+        {gs.meta.totalRuns>0&&gs.meta.clears===0&&<div style={{fontSize:11,color:P.gold}}>🗡️ 2周目以降:「錆びた剣」でスタート</div>}
+        {gs.meta.clears>0&&<div style={{fontSize:11,color:P.gold}}>🖤 クリア特典:「虚無の心臓」装備</div>}
+      </div></div>);
+
+  // ══ SKIT ══
+  if(gs.screen==="skit"&&gs.skit){
+    const line=gs.skit[gs.skitIdx];const ec=gs.skit.find(l=>l.ch!=="🤓"&&l.ch!=="🐑");
+    return(<div style={st.wrap} onClick={advSkit}><style>{CSS}</style>
+      <div style={{display:"flex",flexDirection:"column",minHeight:"100dvh"}}>
+        <div style={{display:"flex",justifyContent:"flex-end",padding:"10px 14px"}}>
+          <button onClick={skipSkit} style={{background:"#333",color:"#aaa",border:"none",borderRadius:6,padding:"5px 12px",fontSize:11,cursor:"pointer"}}>スキップ ≫</button>
+        </div>
+        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"space-around",padding:"20px"}}>
+          <div style={{textAlign:"center",transform:line.ch==="🤓"?"scale(1.1)":"scale(1)",transition:"transform .2s"}}><div style={{fontSize:64}}>🤓</div><div style={{fontSize:12,marginTop:4}}>ソラ</div></div>
+          <div style={{fontSize:24,color:P.accent,fontWeight:900}}>VS</div>
+          <div style={{textAlign:"center",transform:line.ch===ec?.ch?"scale(1.1)":"scale(1)",transition:"transform .2s"}}><div style={{fontSize:64}}>{ec?.ch||"❓"}</div><div style={{fontSize:12,marginTop:4}}>{ec?.nm||"???"}</div></div>
+        </div>
+        <div style={{background:P.panelBg,borderTop:`2px solid ${P.accent}`,padding:20,minHeight:130}}>
+          <div className="fadein" key={gs.skitIdx} style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+            <div style={{fontSize:32,flexShrink:0}}>{line.ch}</div>
+            <div><div style={{fontSize:12,color:P.gold,marginBottom:4}}>{line.nm}</div><div style={{fontSize:15,lineHeight:1.6}}>{line.tx}</div></div>
+          </div>
+          <div style={{textAlign:"right",fontSize:11,color:P.dim,marginTop:8}}>▶ ({gs.skitIdx+1}/{gs.skit.length})</div>
+        </div>
+      </div></div>);
+  }
+
+  // ══ MAP ══
+  if(gs.screen==="map"&&gs.run){
+    const{run}=gs;const stg=run.stage;
+    const icons={battle:stg===3?"📦":stg===2?"😈":"🍄",elite:stg===3?"🦇":"⚔️",boss:stg===3?"👿":stg===2?"🔥":"🖤",event:"❓",rest:"😴",shop:"🛡️",treasure:"📦"};
+    const colors={battle:"#555",elite:"#e67e22",boss:P.accent,event:"#9b59b6",rest:"#2ecc71",shop:"#3498db",treasure:P.gold};
+    return(<div style={st.wrap}><style>{CSS}</style><DeckModal/>
+      <div className="fadein" style={{padding:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontSize:14,fontWeight:700}}>ステージ{stg}「{SN[stg]}」</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={()=>upd(s=>{s.showDeck=true;})} style={{background:"#222",border:"1px solid #444",color:"#ccc",borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>🃏{run.deck.length}</button>
+            <div style={{fontSize:12,color:P.gold}}>💰{run.gold}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:10,fontSize:12,marginBottom:8,color:P.dim,flexWrap:"wrap"}}>
+          <span>❤️{run.hp}/{run.maxHp}</span><span>⚡{run.maxEnergy}</span><span>💪{run.str}</span>
+          {run.relics.map((r,i)=><span key={i} title={r.desc}>{r.icon}</span>)}
+          {run.potions.map((p,i)=><span key={"p"+i}>{p.icon}</span>)}
+        </div>
+        {gs.mokeMsg&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:8,marginBottom:8,fontSize:12,color:"#9fa8da"}}>💤 {gs.mokeMsg}</div>}
+        <div style={{...st.suzuBox,marginBottom:8,fontSize:13}}>🐑 すず「{gs.suzuMsg}」</div>
+        {gs.log.length>0&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:8,padding:8,marginBottom:8,fontSize:12,color:P.dim}}>{gs.log[gs.log.length-1]}</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {run.map.map((row,ri)=>(
+            <div key={ri} style={{display:"flex",justifyContent:"center",gap:6,opacity:ri===run.row?1:ri<run.row?.3:.5,position:"relative"}}>
+              {ri===run.row&&<div style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",fontSize:11,color:P.accent}}>▶</div>}
+              {row.map((node,ni)=>(
+                <button key={ni} disabled={ri!==run.row} onClick={()=>selectNode(node)}
+                  style={{width:52,height:52,borderRadius:10,border:ri===run.row?`2px solid ${colors[node.type]||P.dim}`:`1px solid #333`,
+                    background:ri===run.row?`${colors[node.type]||P.dim}22`:"#111",cursor:ri===run.row?"pointer":"default",
+                    display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,touchAction:"manipulation"}}>
+                  <div style={{fontSize:18}}>{icons[node.type]||"?"}</div>
+                  <div style={{fontSize:7,color:P.dim}}>{node.type==="boss"?"BOSS":node.type==="elite"?"ELITE":""}</div>
+                </button>))}
+            </div>))}
+        </div>
+      </div></div>);
+  }
+
+  // ══ SHOP ══
+  if(gs.screen==="shop"&&gs.run){
+    const{run}=gs;
+    return(<div style={st.wrap}><style>{CSS}</style><DeckModal/>
+      <div className="fadein" style={{padding:16,minHeight:"100dvh",display:"flex",flexDirection:"column"}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>🛡️ すらいむ商会</div>
+        <div style={{fontSize:12,color:P.dim,marginBottom:6}}>すらいむ「ビジネスに感情は持ち込まない主義だ」</div>
+        <div style={{...st.suzuBox,marginBottom:8}}>🐑 すず「{gs.suzuMsg}」</div>
+        <div style={{fontSize:13,color:P.gold,marginBottom:10}}>💰 {run.gold}G</div>
+        {gs.log.length>0&&<div style={{fontSize:12,color:"#4caf50",marginBottom:8}}>{gs.log[gs.log.length-1]}</div>}
+        <div style={{display:"flex",gap:8,marginBottom:10}}>
+          <button style={{...st.btn(gs.shopScreen==="buy"?P.accent:"#333"),padding:"7px 14px",fontSize:13}} onClick={()=>upd(s=>{s.shopScreen="buy";})}>購入</button>
+          <button style={{...st.btn(gs.shopScreen==="remove"?"#e67e22":"#333"),padding:"7px 14px",fontSize:13}} onClick={()=>upd(s=>{s.shopScreen="remove";})}>削除(50G)</button>
+        </div>
+        {gs.shopScreen==="buy"&&<>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+            {gs.shopCards.map((it,i)=>(
+              <button key={i} onClick={()=>buyCard(i)} disabled={run.gold<it.price}
+                style={{width:94,background:P.cardBg,border:`2px solid ${run.gold>=it.price?it.card.color:"#333"}`,borderRadius:12,padding:9,
+                  display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:run.gold>=it.price?"pointer":"not-allowed",opacity:run.gold>=it.price?1:.5,touchAction:"manipulation"}}>
+                <div style={{fontSize:9}}>{rarityBadge(it.card.r)}</div>
+                <div style={{fontSize:20}}>{it.card.icon}</div>
+                <div style={{fontSize:11,fontWeight:700,color:it.card.color}}>{it.card.name}</div>
+                <div style={{fontSize:9,color:P.dim}}>{it.card.desc}</div>
+                <div style={{fontSize:11,color:P.gold}}>{it.price}G</div>
+              </button>))}
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {gs.shopPotions.map((it,i)=>(
+              <button key={i} onClick={()=>buyPotion(i)} disabled={run.gold<it.price||run.potions.length>=3}
+                style={{width:94,background:"#1a1a2e",border:"2px solid #9b59b6",borderRadius:12,padding:9,display:"flex",flexDirection:"column",alignItems:"center",gap:3,
+                  cursor:"pointer",opacity:run.gold>=it.price&&run.potions.length<3?1:.5,touchAction:"manipulation"}}>
+                <div style={{fontSize:20}}>{it.potion.icon}</div>
+                <div style={{fontSize:11,fontWeight:700,color:"#ba68c8"}}>{it.potion.name}</div>
+                <div style={{fontSize:9,color:P.dim}}>{it.potion.desc}</div>
+                <div style={{fontSize:11,color:P.gold}}>{it.price}G</div>
+              </button>))}
+            {gs.shopRelic&&(
+              <button onClick={buyRelic} disabled={run.gold<gs.shopRelic.price}
+                style={{width:94,background:"#1a1a2e",border:"2px solid #f5c518",borderRadius:12,padding:9,display:"flex",flexDirection:"column",alignItems:"center",gap:3,
+                  cursor:"pointer",opacity:run.gold>=gs.shopRelic.price?1:.5,touchAction:"manipulation"}}>
+                <div style={{fontSize:20}}>{gs.shopRelic.relic.icon}</div>
+                <div style={{fontSize:11,fontWeight:700,color:P.gold}}>{gs.shopRelic.relic.name}</div>
+                <div style={{fontSize:8,color:P.dim}}>{gs.shopRelic.relic.desc}</div>
+                <div style={{fontSize:11,color:P.gold}}>{gs.shopRelic.price}G</div>
+              </button>)}
+          </div></>}
+        {gs.shopScreen==="remove"&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {run.deck.map((card,i)=>(
+            <button key={card.uid} onClick={()=>removeCard(i)} disabled={run.gold<50||run.deck.length<=5}
+              style={{background:P.cardBg,border:`1px solid ${card.color}`,borderRadius:8,padding:6,display:"flex",flexDirection:"column",alignItems:"center",gap:2,cursor:"pointer",touchAction:"manipulation",minWidth:58}}>
+              <div style={{fontSize:16}}>{card.icon}</div><div style={{fontSize:9,color:card.color}}>{card.name}</div>
+            </button>))}</div>}
+        <div style={{marginTop:"auto",paddingTop:14}}>
+          <button style={st.btn("#555")} onClick={()=>upd(s=>{s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");})}>立ち去る</button>
+        </div>
+      </div></div>);
+  }
+
+  // ══ REST ══
+  if(gs.screen==="rest"&&gs.run){
+    const{run}=gs;
+    if(!gs.restChoice)return(<div style={st.wrap}><style>{CSS}</style>
+      <div className="fadein" style={{padding:20,minHeight:"100dvh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+        <div style={{fontSize:48}}>😴</div><div style={{fontSize:14}}>にーや「ゆっくり休んでいって...zzz」</div>
+        <div style={{...st.suzuBox,maxWidth:300}}>🐑 すず「{gs.suzuMsg}」</div>
+        <div style={{fontSize:12,color:P.dim}}>❤️ {run.hp}/{run.maxHp}</div>
+        <button style={st.btn("#2ecc71")} onClick={restHeal}>💚 HP回復 (+{Math.floor(run.maxHp*.35)})</button>
+        <button style={st.btn("#9b59b6")} onClick={()=>upd(s=>{s.restChoice="enhance";})}>✨ カード強化</button>
+      </div></div>);
+    return(<div style={st.wrap}><style>{CSS}</style>
+      <div style={{padding:16,minHeight:"100dvh"}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:12}}>✨ 強化するカードを選択</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {run.deck.map((card,i)=>(
+            <button key={card.uid} onClick={()=>restEnhance(i)}
+              style={{background:P.cardBg,border:`2px solid ${card.enhanced?"#f1c40f":card.color}`,borderRadius:8,padding:7,
+                display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",touchAction:"manipulation",minWidth:68,opacity:card.enhanced?.4:1}}>
+              <div style={{fontSize:18}}>{card.icon}</div><div style={{fontSize:10,fontWeight:700,color:card.color}}>{card.name}</div>
+              <div style={{fontSize:8,color:P.dim}}>{card.desc}</div>
+              {card.up&&!card.enhanced&&<div style={{fontSize:8,color:"#f1c40f"}}>→{card.up}</div>}
+            </button>))}
+        </div>
+        <button style={{...st.btn("#555"),marginTop:16}} onClick={()=>upd(s=>{s.restChoice=null;})}>戻る</button>
+      </div></div>);
+  }
+
+  // ══ BATTLE ══
+  if(gs.screen==="battle"&&gs.battle){
+    const{run,battle:b,enemies:ens}=gs;const myPct=Math.max(0,run.hp/run.maxHp*100);
+    const aliveN=ens.filter(x=>x.hp>0).length;
+    const doomE=ens.find(e=>e.hp>0&&e.doom>0);
+    return(<div style={st.wrap}><style>{CSS}</style><DeckModal/>
+      <div className={gs.shakeOn?"shake":""} style={{padding:10,display:"flex",flexDirection:"column",minHeight:"100dvh"}}>
+        {doomE&&<div className="doomP" style={{textAlign:"center",fontSize:15,fontWeight:900,marginBottom:4}}>💀 終焉まで {doomE.doom} ターン 💀</div>}
+        {/* 敵 */}
+        <div style={{display:"flex",gap:5,marginBottom:5,flexWrap:"wrap"}}>
+          {ens.map((e,i)=>{if(e.hp<=0)return null;const hp=Math.max(0,e.hp/e.maxHp*100);const t=EN[e.id];const sel=i===gs.ti;
+            return(<div key={i} onClick={()=>upd(s=>{s.ti=i;})}
+              style={{flex:1,minWidth:aliveN>1?130:undefined,position:"relative",background:sel?"rgba(233,69,96,0.12)":"rgba(255,255,255,0.03)",
+                borderRadius:10,padding:8,border:sel?`2px solid ${P.accent}`:"2px solid transparent",cursor:"pointer",touchAction:"manipulation"}}>
+              <Pops target={i}/>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                <span style={{fontSize:aliveN>1?22:30}}>{e.icon}</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,fontWeight:700}}>
+                    {e.name}{t?.boss&&e.phase>=2?` 【P${e.phase}】`:""}{e.summoned?" (増援)":""}
+                    {e.counterStance>0&&<span style={{color:"#ff9800",marginLeft:4}}>🔄構え中</span>}
+                    {e.doubleNext&&<span style={{color:"#ff1744",marginLeft:4}}>💥2倍</span>}
+                  </div>
+                  <div style={{background:"#333",borderRadius:3,height:7,overflow:"hidden",marginTop:2}}>
+                    <div style={{width:`${hp}%`,height:"100%",background:hp>50?P.accent:P.hpBar,transition:"width .3s"}}/></div>
+                  <div style={{fontSize:9,color:P.dim,marginTop:2}}>
+                    HP{Math.max(0,e.hp)}/{e.maxHp}{e.shield>0?` 🛡️${e.shield}`:""}{e.poison>0?` ☠️${e.poison}`:""}{e.burn>0?` 🔥${e.burn}`:""}{e.str>0?` 💪${e.str}`:""}
+                  </div>
+                </div>
+              </div>
+              {e.intent&&<div style={{fontSize:10,color:P.gold,background:"rgba(245,197,24,0.08)",borderRadius:5,padding:"3px 6px"}}>
+                🔮 {e.intent.name}{e.intent.dmg?` ${(e.intent.dmg+(e.str||0))*(e.doubleNext?2:1)}${e.intent.hits?`×${e.intent.hits}`:""}dmg`:""}
+                {e.intent.poison?` +毒${e.intent.poison}`:""}{e.intent.shield?` 盾${e.intent.shield}`:""}
+                {e.intent.counter?<span style={{color:"#ff9800"}}>{` ⚡反撃${e.intent.counter}`}</span>:""}
+                {e.intent.heal?` 回復${e.intent.heal}`:""}{e.intent.convertPoison?<span style={{color:"#ff1744"}}>{` 毒×${e.intent.convertPoison}!`}</span>:""}
+                {e.intent.weaken?` 弱体${e.intent.weaken}T`:""}{e.intent.summon?" 召喚!":""}{e.intent.curse?" 呪い!":""}
+                {e.intent.burn?` +炎上${e.intent.burn}`:""}{e.intent.selfStr?` 💪+${e.intent.selfStr}`:""}{e.intent.shieldBash?" 盾バッシュ!":""}
+                {e.intent.doubleNext?<span style={{color:"#ff1744"}}> 次攻撃2倍!</span>:""}
+                {e.intent.doom?<span style={{color:"#ff1744"}}> 即死ﾀｲﾏｰ!</span>:""}{e.intent.energyDrain?" ｴﾈ-1":""}{e.intent.nothing?" (様子見)":""}
+              </div>}
+            </div>);})}
+        </div>
+        {aliveN>1&&<div style={{fontSize:10,color:P.dim,textAlign:"center",marginBottom:3}}>▲ タップで攻撃先を変更</div>}
+
+        {gs.hint&&<div style={{background:"rgba(255,193,7,0.1)",border:"1px solid #ffc107",borderRadius:8,padding:6,fontSize:12,marginBottom:4}}>🐱 ゴミカス「{gs.hint}」</div>}
+        {gs.roiMsg&&<div style={{background:"rgba(156,39,176,0.1)",border:"1px solid #9c27b0",borderRadius:8,padding:6,fontSize:11,marginBottom:4}}>👿 {gs.roiMsg}</div>}
+
+        <div style={{overflowY:"auto",fontSize:10,color:P.dim,padding:3,maxHeight:55,marginBottom:4}}>
+          {gs.log.slice(-4).map((l,i)=><div key={i}>{l}</div>)}</div>
+
+        {/* プレイヤー */}
+        <div style={{position:"relative",background:"rgba(255,255,255,0.05)",borderRadius:10,padding:8,marginBottom:5}}>
+          <Pops target="p"/>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:24}}>🤓</span>
+            <div style={{flex:1}}>
+              <div style={{background:"#333",borderRadius:3,height:7,overflow:"hidden"}}>
+                <div style={{width:`${myPct}%`,height:"100%",background:myPct>40?"#4caf50":"#f44336",transition:"width .3s"}}/></div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:P.dim,marginTop:3,flexWrap:"wrap",gap:2}}>
+                <span>❤️{Math.max(0,run.hp)}/{run.maxHp}</span>
+                <span>🛡️{run.shield}{run.counter>0?<span style={{color:"#4fc3f7"}}> 🔄{run.counter}</span>:""}</span>
+                <span>⚡{b.energy}/{run.maxEnergy}</span>
+                <span>💪{run.str}{run.weakened>0?<span style={{color:"#ff9800"}}>(弱{run.weakened})</span>:""}</span>
+                <span>🃏山{b.drawPile.length}捨{b.discardPile.length}</span>
+              </div>
+              {(run.poison>0||run.burn>0)&&<div style={{fontSize:9,color:"#ff9800",marginTop:2}}>{run.poison>0?`☠️毒${run.poison} `:""}{run.burn>0?`🔥炎上${run.burn}`:""}</div>}
+            </div>
+            <button onClick={()=>upd(s=>{s.showDeck=true;})} style={{background:"#222",border:"1px solid #444",color:"#ccc",borderRadius:6,padding:"3px 7px",fontSize:10,cursor:"pointer"}}>🃏</button>
+          </div>
+          {run.potions.length>0&&<div style={{display:"flex",gap:5,marginTop:5}}>
+            {run.potions.map((p,i)=>(
+              <button key={p.uid} onClick={()=>usePotion(i)}
+                style={{background:"#1a1a2e",border:"1px solid #9b59b6",borderRadius:6,padding:"3px 8px",fontSize:10,color:"#ba68c8",cursor:"pointer",touchAction:"manipulation"}}>
+                {p.icon}{p.name}</button>))}
+          </div>}
+        </div>
+
+        {/* 手札 */}
+        <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:5,WebkitOverflowScrolling:"touch"}}>
+          {b.hand.map((card,i)=>{const ok=card.type!=="curse"&&(card.id==="allcut"?b.energy>0:card.cost<=b.energy);
+            return(<button key={card.uid} className="cardin" onClick={()=>ok&&playCard(i)} style={st.card(ok,card.color)}>
+              <div style={{fontSize:17}}>{card.icon}</div>
+              <div style={{fontSize:10,fontWeight:700,color:card.color||P.text}}>{card.name}</div>
+              <div style={{fontSize:8,color:P.dim}}>{card.desc}</div>
+              <div style={{fontSize:9,color:P.gold}}>⚡{card.id==="allcut"?"全":card.cost}</div>
+            </button>);})}</div>
+
+        <button onClick={endTurn} style={{...st.btn(P.accent2),width:"100%",marginTop:3,fontSize:14,padding:"10px 0"}}>ターン終了 (T{b.turn})</button>
+      </div></div>);
+  }
+
+  // ══ REWARD ══
+  if(gs.screen==="reward"&&gs.reward)return(
+    <div style={st.wrap}><style>{CSS}</style>
+      <div className="fadein" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100dvh",padding:20,gap:14}}>
+        <div style={{fontSize:24,fontWeight:700}}>🎉 勝利！</div>
+        <div style={{fontSize:14,color:P.gold}}>+{gs.reward.gold}G</div>
+        {gs.reward.relicDrop&&<div style={{background:"rgba(245,197,24,0.1)",border:"1px solid #f5c518",borderRadius:10,padding:10,fontSize:13}}>
+          🏺 レリック入手: {gs.reward.relicDrop.icon}{gs.reward.relicDrop.name}<div style={{fontSize:10,color:P.dim}}>{gs.reward.relicDrop.desc}</div></div>}
+        <div style={{...st.suzuBox,maxWidth:300}}>🐑 すず「{gs.suzuMsg}」</div>
+        <div style={{fontSize:14}}>カードを1枚選択</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
+          {gs.reward.cards.map((card,i)=>(
+            <button key={i} onClick={()=>pickReward(card)}
+              style={{width:100,background:P.cardBg,border:`2px solid ${card.color}`,borderRadius:12,padding:12,
+                display:"flex",flexDirection:"column",alignItems:"center",gap:4,cursor:"pointer",touchAction:"manipulation"}}>
+              <div style={{fontSize:9}}>{rarityBadge(card.r)}</div>
+              <div style={{fontSize:28}}>{card.icon}</div>
+              <div style={{fontSize:12,fontWeight:700,color:card.color}}>{card.name}</div>
+              <div style={{fontSize:9,color:P.dim}}>{card.desc}</div>
+              <div style={{fontSize:10,color:P.gold}}>⚡{card.cost}</div>
+            </button>))}
+        </div>
+        <button onClick={()=>pickReward(null)} style={st.btn("#555")}>スキップ</button>
+        {gs.reward.isBoss&&gs.run.stage<3&&<div style={{fontSize:12,color:P.gold}}>🏰 次のステージへ進みます</div>}
+      </div></div>);
+
+  // ══ ENDING ══
+  if(gs.screen==="ending"){
+    const lines=[
+      {ch:"👿",nm:"ろい",tx:"うそ...このわたしが...抽選勇者ごときに..."},
+      {ch:"👿",nm:"ろい",tx:"...まあいっか♪ 税率は50%に下げとくね。じゃーね♡"},
+      {ch:"🤓",nm:"ソラ",tx:"まだ50%あるんですけど..."},
+      {ch:"🐑",nm:"すず",tx:"やったわソラ！ 女神の導きの勝利よ♡ 記念にわたしを崇めていいわ♡"},
+      {ch:"💤",nm:"もけもけ",tx:"こうして、世界はそこそこ平和になった。...税率まだ高いけどね"},
+      {ch:"💤",nm:"もけもけ",tx:"ソラの大冒険、これにて完結。...2周目？ あるらしいよ。僕は寝るけど"},
+    ];
+    const line=lines[Math.min(gs.endIdx,lines.length-1)];
+    const last=gs.endIdx>=lines.length-1;
+    return(<div style={st.wrap} onClick={()=>!last&&upd(s=>{s.endIdx++;})}><style>{CSS}</style>
+      <div className="fadein" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100dvh",padding:20,gap:18}}>
+        <div style={{fontSize:26,fontWeight:900,background:`linear-gradient(135deg,${P.gold},#fff)`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>🎊 GAME CLEAR 🎊</div>
+        <div style={{fontSize:56}}>👑🤓👑</div>
+        <div key={gs.endIdx} className="fadein" style={{background:P.panelBg,border:`1px solid ${P.gold}`,borderRadius:12,padding:16,maxWidth:340,width:"100%",minHeight:90}}>
+          <div style={{display:"flex",gap:10}}>
+            <div style={{fontSize:28}}>{line.ch}</div>
+            <div><div style={{fontSize:11,color:P.gold,marginBottom:4}}>{line.nm}</div><div style={{fontSize:14,lineHeight:1.7}}>{line.tx}</div></div>
+          </div>
+          {!last&&<div style={{textAlign:"right",fontSize:10,color:P.dim,marginTop:6}}>タップで次へ ▶</div>}
+        </div>
+        {last&&<>
+          <div style={{fontSize:12,color:P.dim}}>周回: {gs.meta.totalRuns}回目でクリア | 通算クリア{gs.meta.clears}回</div>
+          <div style={{fontSize:12,color:P.gold}}>🖤 次周から「虚無の心臓」(最大HP-15/エネ+1)装備！</div>
+          <button style={st.btn()} onClick={startRun}>🔄 2周目へ</button>
+          <button style={st.btn("#333")} onClick={()=>upd(s=>{s.screen="title";})}>🏠 タイトル</button>
+        </>}
+      </div></div>);
+  }
+
+  // ══ GAMEOVER ══
+  if(gs.screen==="gameOver")return(
+    <div style={st.wrap}><style>{CSS}</style>
+      <div className="fadein" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100dvh",padding:20,gap:16}}>
+        <div style={{fontSize:28,fontWeight:900,color:P.accent}}>GAME OVER</div>
+        <div style={{background:"rgba(255,255,255,0.05)",borderRadius:12,padding:16,maxWidth:340,width:"100%"}}>
+          <div style={{fontSize:14,marginBottom:12}}>👿 ろい「{gs.goTaunt}」</div>
+          <div style={{fontSize:13,marginBottom:12,color:P.gold}}>🐱 ゴミカス：「{gs.goAdvice}」</div>
+          <div style={{fontSize:12,color:P.dim}}>💤 もけもけ：「...次がんばれ」</div>
+        </div>
+        <div style={{fontSize:12,color:P.dim}}>到達: ステージ{gs.run?.stage||1} | 周回: {gs.meta.totalRuns}回目</div>
+        <button style={st.btn()} onClick={startRun}>🔄 もう1回</button>
+        <button style={st.btn("#333")} onClick={()=>upd(s=>{s.screen="title";})}>🏠 タイトル</button>
+      </div></div>);
+
+  return <div style={st.wrap}><div style={{padding:20,color:P.dim}}>Loading...</div></div>;
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<SoraAdventure />);
+</script>
+</body>
+</html>
