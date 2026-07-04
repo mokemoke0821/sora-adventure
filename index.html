@@ -153,7 +153,7 @@ const CM={
   drain:{name:"吸収",icon:"💜",cost:2,type:"skill",color:"#2ecc71",desc:"10ダメージ+HP6回復",r:"u"},
   rage:{name:"憤怒",icon:"💪",cost:1,type:"skill",color:"#2ecc71",desc:"筋力+2(永続)",r:"u"},
   accel:{name:"加速",icon:"⚡",cost:1,type:"skill",color:"#2ecc71",desc:"1枚引く+⚡1",r:"u"},
-  cleanse:{name:"浄化",icon:"✨",cost:1,type:"skill",color:"#2ecc71",desc:"デバフ解除+手札の呪い1枚除去",r:"u"},
+  cleanse:{name:"浄化",icon:"✨",cost:1,type:"skill",color:"#2ecc71",desc:"毒・炎上・筋力低下を解除+呪い1枚除去",r:"u"},
   scout:{name:"偵察",icon:"🔍",cost:1,type:"skill",color:"#2ecc71",desc:"カードを2枚引く",r:"c"},
   fatigue:{name:"疲労",icon:"💀",cost:99,type:"curse",color:"#666",desc:"使えないゴミ札",r:"x"},
   pain:{name:"痛み",icon:"💀",cost:99,type:"curse",color:"#666",desc:"毎ターン2ダメージ",r:"x"},
@@ -239,7 +239,7 @@ const EN={
     phase1deck:["ff","ff","pillar","armor","ff","repair","pillar"],
     phase2deck:["bf","bf","meteor","awaken2","bf"],
     lines:["おい！ 何だお前！ 勇者？ ふざけんな！"],phase2lines:["もういい、全力だ！ あっつ！ 俺のマントも燃えてる！"],
-    cards:{ff:{name:"炎拳",dmg:12,burn:2},pillar:{name:"火柱",dmg:8,burn:3,selfBurn:1},armor:{name:"紅蓮の鎧",shield:16},repair:{name:"自己修復",heal:22},bf:{name:"灼熱拳",dmg:20,burn:3},meteor:{name:"メテオ",dmg:38,burn:4},awaken2:{name:"灼熱覚醒",selfStr:5,selfDmg:10}}},
+    cards:{ff:{name:"炎拳",dmg:12,burn:2},pillar:{name:"火柱",dmg:8,burn:3,selfBurn:1},armor:{name:"紅蓮の鎧",shield:16},repair:{name:"自己修復",heal:22,selfHealOnce:true},bf:{name:"灼熱拳",dmg:20,burn:3},meteor:{name:"メテオ",dmg:38,burn:4},awaken2:{name:"灼熱覚醒",selfStr:5,selfDmg:10}}},
   // ── S3 ──
   mimic:{name:"ミミック",icon:"📦",hp:55,maxHp:55,
     deck:["wait","chomp","chomp","swallow","chomp"],lines:["宝箱だよ〜 開けてみて〜 ...ガブッ"],
@@ -729,7 +729,10 @@ function SoraAdventure(){
     if(card.shield)e.shield+=card.shield;
     if(card.counter){e.counterStance=card.counter;s.log.push(`🔄 ${e.name}が構えた！ 攻撃すると${card.counter}反撃！`);}
     else if(!card.counter)e.counterStance=0;
-    if(card.heal){e.hp=Math.min(e.hp+card.heal,e.maxHp);addPop(s,i,`+${card.heal}`,"#66bb6a");}
+    if(card.heal){
+      if(card.selfHealOnce&&e.selfHealUsed){e.shield+=8;addPop(s,i,"+8🛡️","#4fc3f7");s.log.push(`🔥 ${e.name}「回復力が尽きた…！」（代わりにシールド8）`);}
+      else{e.hp=Math.min(e.hp+card.heal,e.maxHp);addPop(s,i,`+${card.heal}`,"#66bb6a");if(card.selfHealOnce)e.selfHealUsed=true;}
+    }
     if(card.poison)s.run.poison+=card.poison;
     if(card.burn)s.run.burn+=card.burn;
     if(card.weaken){s.run.weakened+=card.weaken;s.log.push(`💔 弱体化 ${card.weaken}T！`);}
