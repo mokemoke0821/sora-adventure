@@ -295,6 +295,10 @@ const TUT=[
 const GD=["毒で死んだな。浄化カードを入れとけ","火力不足だ。筋力バフを積め","シールド張ってないだろ。防御カード使え","デバフ放置したな。浄化で解除しろ","敵が複数いたら召喚元を先に倒せ","カウンター構え中に殴るな","炎上で溶けたな。火消しの外套があると楽だぞ","豪腕は3ターン周期だ。覚えろ","終焉宣告されたら全力で削れ。防御は捨てろ","処刑宣告→断罪のコンボは36超え。鉄壁を合わせろ"];
 const RT=["だっっっさ！ 何そのプレイ！","もっかい来なよ♪ 次はマシなプレイ見せてよね！","見てるこっちが恥ずかしいんだけど！","お前で148人目♪ ...全員負けてるけどね♡"];
 const ROI_BATTLE=["ろい「ていうかお前、カード切るタイミング下手すぎ」","ろい「そこは防御でしょ！ 見てらんない！」","ろい「ヒマだから相手してあげてるの♪ 感謝して？」","ろい「わたしの税率政策、悪くないと思うんだけどなー」"];
+// ゴリアテ撃破後のゴミカス正体示唆（マップ雑談/相談所プール）
+const GOMI_GOLIATH=["あのチャンプ、妙だったな。筋肉の動きが素人くさい。…いや、\"演技\"くさい、か","ピンクの光、見たか? 俺は見た。…この城の主と同じ色だ。覚えとけ","ゴリアテね。闘技場の記録を調べたが、あいつの名前は3日前に突然現れてる。…臭うな"];
+// ゴミカスの廃棄機構アドバイス（戦闘中ヒント/相談所プール）
+const GOMI_EXHAUST=["呪いカードは廃棄しろ。焚き火か浄化だ。デッキは細いほど強い","爆裂火薬みたいな使い切り、ためらうなよ。温存したまま死ぬのが一番ダサい","手札破壊持ちには枚数で勝負するな。1枚1枚を強くしろ","リサイクルは捨て札が肥えてから使え。序盤に切るのは素人だ"];
 
 // ═══ マップ ═══
 const SN={1:"もだえの森",2:"灼熱のコロシアム",3:"虚無の王城"};
@@ -433,6 +437,14 @@ function skitLines(tmpl,type,run){
       {ch:"🐑",nm:"すず",tx:suzu("bossWarn3")},
       {ch:tmpl.icon,nm:n,tx:"ようこそ我が城へ、勇者...ソラとか言ったっけ？"}];
     if(run.roiGift)arr.push({ch:tmpl.icon,nm:n,tx:"あ、アクセ置いといてくれた人だ♪ 律儀〜。ちょっとオマケしといたげる♡"});
+    if(run.goliathDefeated)arr.push(
+      {ch:tmpl.icon,nm:n,tx:"そうそう、コロシアム楽しかった？ ゴリアテ、強かったでしょ♪"},
+      {ch:"🤓",nm:"ソラ",tx:"…え？ なんでそれを…まさか"},
+      {ch:tmpl.icon,nm:n,tx:"そ。あれわたし♪ 暇だったから筋肉着てみた☆ ガッハッハ！ って言うの疲れるんだよね〜"},
+      {ch:"🤓",nm:"ソラ",tx:"道理で語尾が時々可愛かった…！"},
+      {ch:"🐱",nm:"ゴミカス",tx:"（画面端）だから言っただろ。演技くさいって"},
+      {ch:"🐑",nm:"すず",tx:"わたしの女神センサーは最初から反応してたわよ♡"},
+      {ch:"🤓",nm:"ソラ",tx:"絶対嘘ですよね!?"});
     arr.push(
       {ch:tmpl.icon,nm:n,tx:"お前で147人目の挑戦者♪ 記念に特別サービスしてあげる♡"},
       {ch:"🤓",nm:"ソラ",tx:"それ嬉しくないやつですよね..."},
@@ -444,6 +456,13 @@ function skitLines(tmpl,type,run){
       {ch:tmpl.icon,nm:n,tx:"わたしの政策を否定するなーっ！！ 行くよ♡"});
     return arr;
   }
+  if(n.includes("ゴリアテ"))return[
+    {ch:"🤓",nm:"ソラ",tx:"え、あの...この人が闘技場のチャンピオン..."},
+    {ch:tmpl.icon,nm:n,tx:"ルールは簡単だ。俺が殴る。お前が倒れる。以上！"},
+    {ch:tmpl.icon,nm:n,tx:"…ふふっ、面白そうな顔♪ …ゴホン。ガッハッハ！ 面白そうなツラだ！"},
+    {ch:"🤓",nm:"ソラ",tx:"今、一瞬声が可愛くなかったですか…？"},
+    {ch:tmpl.icon,nm:n,tx:"気のせいだ！！"},
+    {ch:"🐑",nm:"すず",tx:suzu("elite")}];
   if(type==="elite")return[
     {ch:"🤓",nm:"ソラ",tx:"え、あの...通してもらえませんか...？"},
     {ch:tmpl.icon,nm:n,tx:tmpl.lines[0]},
@@ -452,6 +471,12 @@ function skitLines(tmpl,type,run){
   return[{ch:tmpl.icon,nm:n,tx:tmpl.lines[0]}];
 }
 
+// ゴリアテ=ろいの仮の姿: 被弾/HP50%で正体が綻ぶ台詞（数値には一切影響しない演出のみ）
+function goliathVoice(s){
+  const g=s.enemies.find(e=>e.id==="goliath"&&e.hp>0);if(!g)return;
+  if(!g.said50&&g.hp<=g.maxHp*.5){g.said50=true;s.log.push("🦍 ゴリアテ「おっ、やるな！ 楽しくなってきたぞ！ ここまで粘った挑戦者、久しぶり…あ、いや、俺は昨日デビューしたばっかりだった！」");}
+  else if(Math.random()<.18){s.log.push(pick(["🦍 ゴリアテ「効かねえよ！ …痛っ。ちょっと効いた」","🦍 ゴリアテ「もっと殴っていいぞ！ 俺は殴られるのも好…よくない！ 全然よくない！」"]));}
+}
 const P={bg:"#0d0d1a",accent:"#e94560",accent2:"#0f3460",gold:"#f5c518",text:"#eaeaea",dim:"#777",hpBar:"#c62828",cardBg:"#16213e",panelBg:"rgba(13,13,26,0.95)"};
 const CSS=`
 @keyframes popUp{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-34px);opacity:0}}
@@ -459,6 +484,7 @@ const CSS=`
 @keyframes cardIn{0%{transform:translateY(14px);opacity:0}100%{transform:translateY(0);opacity:1}}
 @keyframes fadeIn{0%{opacity:0}100%{opacity:1}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+@keyframes pinkFlash{0%{opacity:.6}100%{opacity:0}}
 .pop{position:absolute;font-weight:900;font-size:16px;animation:popUp .85s ease-out forwards;pointer-events:none;text-shadow:0 1px 3px #000;z-index:5}
 .shake{animation:shakeA .35s ease}
 .cardin{animation:cardIn .22s ease}
@@ -473,7 +499,7 @@ function SoraAdventure(){
     meta:Object.assign({totalRuns:0,bestStage:0,clears:0},store.get("sora:meta")||{}),log:[],reward:null,hint:null,suzuMsg:"",mokeMsg:"",roiMsg:"",tut:0,showHelp:false,helpIntro:false,
     skit:null,skitIdx:0,skitEid:null,goTaunt:"",goAdvice:"",
     shopCards:[],shopPotions:[],shopRelic:null,shopScreen:null,restChoice:null,
-    pops:[],shakeOn:false,showDeck:false,endIdx:0,_rr:null,
+    pops:[],shakeOn:false,showDeck:false,endIdx:0,_rr:null,pinkFlash:false,gomiMsg:"",
   });
   const[tick,setTick]=useState(0);const gs=gsRef.current;
   const rr=useCallback(()=>setTick(t=>t+1),[]);
@@ -522,7 +548,7 @@ function SoraAdventure(){
     s.run={stage:1,row:0,deck:initDeck(),relics,potions:[mp("healpot")],gold:50,hp:maxHp,maxHp,energy:maxEnergy,maxEnergy,
       str:0,shield:0,poison:0,burn:0,counter:0,thorns:0,weakened:0,energyDebt:0,map:genMap(1),
       seenEvents:[],nextShopDiscount:false,nextBattleHandPenalty:0,forceBattleNext:false,pendingBattleBonus:0,roiGift:false,goliathDefeated:false,bossHintSeen:false};
-    s.enemies=[];s.log=[];s.suzuMsg=suzu("mapStart");s.mokeMsg="";
+    s.enemies=[];s.log=[];s.suzuMsg=suzu("mapStart");s.mokeMsg="";s.gomiMsg="";
     if(!s.meta.rulesSeen){s.meta.rulesSeen=true;s.showHelp=true;s.helpIntro=true;}
     if(s.meta.totalRuns>1)s.log=["🗡️ 周回ボーナス:「錆びた剣」を装備して開始！"];
   });
@@ -612,6 +638,7 @@ function SoraAdventure(){
     if(!s.hint&&s.run.poison>=5)s.hint=GH.poison;
     if(!s.hint&&s.run.burn>=4)s.hint=GH.burn;
     if(!s.hint&&s.run.hp<=s.run.maxHp*.25&&card.type==="attack")s.hint=GH.lowHp;
+    if(card.type==="attack")goliathVoice(s);
     if(s.enemies.every(e=>e.hp<=0))onWin(s);
   });
 
@@ -672,6 +699,7 @@ function SoraAdventure(){
       else if(_en0>=2&&!s.battle.eHinted&&!s.hint){s.hint="エネルギー余ってたぞ。使い切ってから終われ";s.battle.eHinted=true;}
     }
     if(Math.random()<.2)s.suzuMsg=suzu("battleHint");
+    if(!s.hint&&Math.random()<.12)s.hint=pick(GOMI_EXHAUST);  // ゴミカスの廃棄機構アドバイス
     // シェイクリセット
     setTimeout(()=>{gsRef.current.shakeOn=false;rr();},400);
   });
@@ -735,6 +763,14 @@ function SoraAdventure(){
     if(beatRoi){s.meta.clears++;s.meta.bestStage=3;s.screen="ending";s.endIdx=0;return;}
     s.log.push("🎉 勝利！");s.suzuMsg=suzu("bossWin");
     const isBoss=s.enemies.some(e=>EN[e.id]?.boss);const isElite=s.enemies.some(e=>EN[e.id]?.elite);
+    // ゴリアテ撃破: 正体の綻び演出（ピンクフラッシュ+撃破台詞、goliathDefeatedフラグ）
+    if(s.enemies.some(e=>e.id==="goliath")){
+      s.run.goliathDefeated=true;
+      s.log.push("🦍 ゴリアテ「…あれ？ なんでまだ立ってんの？ …俺の負け？ マジで？」");
+      s.log.push("💗（画面が一瞬ピンク色にフラッシュした…）");
+      s.log.push("🦍 ゴリアテ「…おっと。見た？ …見てないよね？ ならヨシ！ じゃあな挑戦者！ 悪くなかったぞ♪」");
+      s.pinkFlash=true;setTimeout(()=>{gsRef.current.pinkFlash=false;rr();},320);
+    }
     let gold=isBoss?100:isElite?44:22;  // ノード増インフレ抑制: 戦闘/エリート報酬を約12%減
     if(s.run.pendingBattleBonus>0){gold+=s.run.pendingBattleBonus;s.log.push(`🫧 親スライムのお礼 +${s.run.pendingBattleBonus}G！`);s.run.pendingBattleBonus=0;}
     const _stolen=s.enemies.reduce((a,e)=>a+(e.stolen||0),0);
@@ -758,7 +794,12 @@ function SoraAdventure(){
       s.suzuMsg=suzu("stageUp");s.mokeMsg=s.run.stage===2?MOKE.stage2:MOKE.stage3;
       s.log=[`🎉 ステージ${s.run.stage}「${SN[s.run.stage]}」へ！`];
     }else{s.run.row++;s.mokeMsg="";}
-    s.screen="map";s.hint=null;
+    s.screen="map";s.hint=null;s.gomiMsg="";
+    // ゴリアテ撃破後: ゴミカスの正体示唆・すずの補完セリフをプールから
+    if(s.run.goliathDefeated){
+      if(Math.random()<.45)s.gomiMsg=pick(GOMI_GOLIATH);
+      if(Math.random()<.35)s.suzuMsg="あのチャンプ、なんかいい匂いした…魔王城の香水と同じ…あら? なんでわたしそれ知ってるのかしら♡";
+    }
   });
 
   const buyCard=idx=>upd(s=>{const it=s.shopCards[idx];if(!it||s.run.gold<it.price)return;sfx("click");
@@ -829,6 +870,10 @@ function SoraAdventure(){
         {gs.run.relics.map((r,i)=>(<div key={i} style={{background:"#1a1a2e",border:"1px solid #f5c518",borderRadius:8,padding:6,fontSize:10}}>{r.icon} {r.name}<div style={{fontSize:8,color:P.dim}}>{r.desc}</div></div>))}
       </div></>}
     </div>):null;
+
+  const FlashOverlay=()=>gs.pinkFlash?(
+    <div style={{position:"fixed",inset:0,background:"#ff69b4",zIndex:60,pointerEvents:"none",animation:"pinkFlash .3s ease-out forwards"}}/>
+  ):null;
 
   const RecycleModal=()=>gs.recycle&&gs.battle?(
     <div className="fadein" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.9)",zIndex:55,display:"flex",flexDirection:"column",padding:16,maxWidth:480,margin:"0 auto"}}>
@@ -934,6 +979,7 @@ function SoraAdventure(){
           {run.potions.map((p,i)=><span key={"p"+i}>{p.icon}</span>)}
         </div>
         {gs.mokeMsg&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:8,marginBottom:8,fontSize:12,color:"#9fa8da"}}>💤 {gs.mokeMsg}</div>}
+        {gs.gomiMsg&&<div style={{background:"rgba(255,193,7,0.08)",border:"1px solid #ffc107",borderRadius:8,padding:8,marginBottom:8,fontSize:12,color:"#ffd54f"}}>🐱 ゴミカス「{gs.gomiMsg}」</div>}
         <div style={{...st.suzuBox,marginBottom:8,fontSize:13}}>🐑 すず「{gs.suzuMsg}」</div>
         {gs.log.length>0&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:8,padding:8,marginBottom:8,fontSize:12,color:P.dim}}>{gs.log[gs.log.length-1]}</div>}
         <div style={{fontSize:10,color:P.dim,marginBottom:6,lineHeight:1.6}}>▶ の行から行き先を1つタップして進みます ─ {icons.battle}バトル ⚔️エリート ❓イベント 😴休憩(回復/強化) 🛡️ショップ 📦宝箱 ♻️交換所 {icons.boss}ボス</div>
@@ -1020,6 +1066,7 @@ function SoraAdventure(){
     if(!gs.restChoice)return(<div style={st.wrap}><style>{CSS}</style>
       <div className="fadein" style={{padding:20,minHeight:"100dvh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
         <div style={{fontSize:48}}>😴</div><div style={{fontSize:14}}>にーや「ゆっくり休んでいって...zzz」</div>
+        {gs.run.goliathDefeated&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:8,maxWidth:320,fontSize:12,color:"#9fa8da",lineHeight:1.6}}>😴 にーや「闘技場のチャンプさん…前にうちで寝てったよ…寝言が『税率98%…』って…」<br/>🤓 ソラ「決定的な証言では!?」</div>}
         <div style={{...st.suzuBox,maxWidth:300}}>🐑 すず「{gs.suzuMsg}」</div>
         <div style={{fontSize:12,color:P.dim}}>❤️ {run.hp}/{run.maxHp}</div>
         <div style={{fontSize:11,color:P.dim}}>どちらか一方だけ選べます（選ぶと次へ進みます）</div>
@@ -1118,7 +1165,7 @@ function SoraAdventure(){
     const{run,battle:b,enemies:ens}=gs;const myPct=Math.max(0,run.hp/run.maxHp*100);
     const aliveN=ens.filter(x=>x.hp>0).length;
     const doomE=ens.find(e=>e.hp>0&&e.doom>0);
-    return(<div style={st.wrap}><style>{CSS}</style><DeckModal/><HelpModal/><RecycleModal/>
+    return(<div style={st.wrap}><style>{CSS}</style><DeckModal/><HelpModal/><RecycleModal/><FlashOverlay/>
       <div className={gs.shakeOn?"shake":""} style={{padding:10,display:"flex",flexDirection:"column",minHeight:"100dvh"}}>
         {doomE&&<div className="doomP" style={{textAlign:"center",fontSize:15,fontWeight:900,marginBottom:4}}>💀 終焉まで {doomE.doom} ターン 💀</div>}
         {/* 敵 */}
@@ -1212,7 +1259,7 @@ function SoraAdventure(){
 
   // ══ REWARD ══
   if(gs.screen==="reward"&&gs.reward)return(
-    <div style={st.wrap}><style>{CSS}</style>
+    <div style={st.wrap}><style>{CSS}</style><FlashOverlay/>
       <div className="fadein" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100dvh",padding:20,gap:14}}>
         <div style={{fontSize:24,fontWeight:700}}>🎉 勝利！</div>
         <div style={{fontSize:14,color:P.gold}}>+{gs.reward.gold}G</div>
