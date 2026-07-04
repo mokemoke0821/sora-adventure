@@ -21,7 +21,7 @@
 const { useState, useCallback, useRef } = React;
 
 /* ═══════════════════════════════════════════
-   ソラの大冒険 — v2.1 初心者フレンドリー版
+   ソラの大冒険 — v2.2 初心者フレンドリー版
    用語日本語化/チュートリアル/あそびかたヘルプ
    全3ステージ+ろい3フェーズ+エンディング
    レリック/ポーション/演出/効果音
@@ -352,7 +352,7 @@ const CSS=`
 function SoraAdventure(){
   const gsRef=useRef({
     screen:"title",run:null,battle:null,enemies:[],ti:0,
-    meta:{totalRuns:0,bestStage:0,clears:0},log:[],reward:null,hint:null,suzuMsg:"",mokeMsg:"",roiMsg:"",tut:0,showHelp:false,
+    meta:{totalRuns:0,bestStage:0,clears:0},log:[],reward:null,hint:null,suzuMsg:"",mokeMsg:"",roiMsg:"",tut:0,showHelp:false,helpIntro:false,
     skit:null,skitIdx:0,skitEid:null,goTaunt:"",goAdvice:"",
     shopCards:[],shopPotions:[],shopRelic:null,shopScreen:null,restChoice:null,
     pops:[],shakeOn:false,showDeck:false,endIdx:0,_rr:null,
@@ -399,6 +399,7 @@ function SoraAdventure(){
     s.run={stage:1,row:0,deck:initDeck(),relics,potions:[mp("healpot")],gold:50,hp:maxHp,maxHp,energy:maxEnergy,maxEnergy,
       str:0,shield:0,poison:0,burn:0,counter:0,thorns:0,weakened:0,energyDebt:0,map:genMap(1)};
     s.enemies=[];s.log=[];s.suzuMsg=suzu("mapStart");s.mokeMsg="";
+    if(!s.meta.rulesSeen){s.meta.rulesSeen=true;s.showHelp=true;s.helpIntro=true;}
     if(s.meta.totalRuns>1)s.log=["🗡️ 周回ボーナス:「錆びた剣」を装備して開始！"];
   });
 
@@ -637,18 +638,19 @@ function SoraAdventure(){
     </div>):null;
 
   const HelpModal=()=>gs.showHelp?(
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:20,padding:16,overflowY:"auto"}} onClick={()=>upd(s=>{s.showHelp=false;})}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:20,padding:16,overflowY:"auto"}} onClick={()=>upd(s=>{s.showHelp=false;s.helpIntro=false;})}>
       <div style={{maxWidth:420,margin:"0 auto"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div style={{fontSize:16,fontWeight:900}}>❓ あそびかた</div>
-          <button onClick={()=>upd(s=>{s.showHelp=false;})} style={{background:"#333",color:"#ccc",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer"}}>閉じる ✕</button>
+          <button onClick={()=>upd(s=>{s.showHelp=false;s.helpIntro=false;})} style={{background:"#333",color:"#ccc",border:"none",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer"}}>閉じる ✕</button>
         </div>
-        <div style={{fontSize:12,color:P.dim,marginBottom:10}}>💤 もけもけ：「説明するのめんどいけど...まあ読んでいって」</div>
+        {gs.helpIntro?<div style={{background:"rgba(233,69,96,0.12)",border:"1px solid #e94560",borderRadius:8,padding:8,fontSize:12,marginBottom:10}}>🐑 すず「はじめての冒険ね♡ 最初にルールだけ簡単に説明するわ。読んだら閉じてマップへ！ ❓ボタンでいつでも見返せるからね」</div>:<div style={{fontSize:12,color:P.dim,marginBottom:10}}>💤 もけもけ：「説明するのめんどいけど...まあ読んでいって」</div>}
         <div style={{background:"rgba(255,255,255,0.05)",borderRadius:10,padding:12,fontSize:13,lineHeight:1.8,marginBottom:12}}>
           ① 手札のカードをタップして、敵を攻撃したりシールドで守ったりする<br/>
           ② 敵の下の 🔮 は「次にやってくること」の予告。大ダメージが来るターンはシールドで防ぐ<br/>
           ③ ⚡（エネルギー）が続く限り何枚でも使える。使い切ったら「ターン終了」<br/>
-          ④ 勝つとカードがもらえてデッキが強くなる。負けても敵の行動を覚えれば次は勝てる
+          ④ 勝つとカードがもらえてデッキが強くなる。負けても敵の行動を覚えれば次は勝てる<br/>
+          ⑤ マップでは ▶ の行から行き先を1つタップして進む。バトル以外に 😴休憩・🛡️ショップ・❓イベント・📦宝箱 がある
         </div>
         <div style={{fontSize:14,fontWeight:700,marginBottom:6}}>📖 用語集</div>
         {[["⚡ エネルギー","カードを使うための力。毎ターン全回復する"],
@@ -727,6 +729,7 @@ function SoraAdventure(){
         {gs.mokeMsg&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:8,marginBottom:8,fontSize:12,color:"#9fa8da"}}>💤 {gs.mokeMsg}</div>}
         <div style={{...st.suzuBox,marginBottom:8,fontSize:13}}>🐑 すず「{gs.suzuMsg}」</div>
         {gs.log.length>0&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:8,padding:8,marginBottom:8,fontSize:12,color:P.dim}}>{gs.log[gs.log.length-1]}</div>}
+        <div style={{fontSize:10,color:P.dim,marginBottom:6,lineHeight:1.6}}>▶ の行から行き先を1つタップして進みます ─ {icons.battle}バトル ⚔️エリート ❓イベント 😴休憩(回復/強化) 🛡️ショップ 📦宝箱 {icons.boss}ボス</div>
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {run.map.map((row,ri)=>(
             <div key={ri} style={{display:"flex",justifyContent:"center",gap:6,opacity:ri===run.row?1:ri<run.row?.3:.5,position:"relative"}}>
@@ -758,6 +761,7 @@ function SoraAdventure(){
           <button style={{...st.btn(gs.shopScreen==="buy"?P.accent:"#333"),padding:"7px 14px",fontSize:13}} onClick={()=>upd(s=>{s.shopScreen="buy";})}>購入</button>
           <button style={{...st.btn(gs.shopScreen==="remove"?"#e67e22":"#333"),padding:"7px 14px",fontSize:13}} onClick={()=>upd(s=>{s.shopScreen="remove";})}>削除(50G)</button>
         </div>
+        <div style={{fontSize:11,color:P.dim,marginBottom:10,lineHeight:1.6}}>購入: カードをデッキに追加 ／ 削除: デッキから1枚取り除く（呪いや使わないカードの整理に）</div>
         {gs.shopScreen==="buy"&&<>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
             {gs.shopCards.map((it,i)=>(
@@ -811,12 +815,14 @@ function SoraAdventure(){
         <div style={{fontSize:48}}>😴</div><div style={{fontSize:14}}>にーや「ゆっくり休んでいって...zzz」</div>
         <div style={{...st.suzuBox,maxWidth:300}}>🐑 すず「{gs.suzuMsg}」</div>
         <div style={{fontSize:12,color:P.dim}}>❤️ {run.hp}/{run.maxHp}</div>
+        <div style={{fontSize:11,color:P.dim}}>どちらか一方だけ選べます（選ぶと次へ進みます）</div>
         <button style={st.btn("#2ecc71")} onClick={restHeal}>💚 HP回復 (+{Math.floor(run.maxHp*.35)})</button>
         <button style={st.btn("#9b59b6")} onClick={()=>upd(s=>{s.restChoice="enhance";})}>✨ カード強化</button>
       </div></div>);
     return(<div style={st.wrap}><style>{CSS}</style>
       <div style={{padding:16,minHeight:"100dvh"}}>
-        <div style={{fontSize:14,fontWeight:700,marginBottom:12}}>✨ 強化するカードを選択</div>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>✨ 強化するカードを選択</div>
+        <div style={{fontSize:11,color:P.dim,marginBottom:12}}>1枚だけ強化できます。数値が上がった強化版（+付き）に変わります</div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {run.deck.map((card,i)=>(
             <button key={card.uid} onClick={()=>restEnhance(i)}
@@ -936,7 +942,8 @@ function SoraAdventure(){
         {gs.reward.relicDrop&&<div style={{background:"rgba(245,197,24,0.1)",border:"1px solid #f5c518",borderRadius:10,padding:10,fontSize:13}}>
           🏺 レリック入手: {gs.reward.relicDrop.icon}{gs.reward.relicDrop.name}<div style={{fontSize:10,color:P.dim}}>{gs.reward.relicDrop.desc}</div></div>}
         <div style={{...st.suzuBox,maxWidth:300}}>🐑 すず「{gs.suzuMsg}」</div>
-        <div style={{fontSize:14}}>カードを1枚選択</div>
+        <div style={{fontSize:14}}>報酬: 好きなカードを1枚選んでデッキに追加</div>
+        <div style={{fontSize:11,color:P.dim,maxWidth:300,textAlign:"center",lineHeight:1.6}}>デッキが増えると強いカードを引きにくくなることも。いらなければ「スキップ」でOK</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
           {gs.reward.cards.map((card,i)=>(
             <button key={i} onClick={()=>pickReward(card)}
