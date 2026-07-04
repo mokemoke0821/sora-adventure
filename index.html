@@ -90,6 +90,16 @@ function draw(s,n){
     if(s.battle.drawPile.length)s.battle.hand.push(s.battle.drawPile.pop());
   }
 }
+// カード廃棄（バトル終了までリシャッフル対象外。exhaustPileへ隔離）
+function exhaustCard(s,card,cause){
+  if(!s.battle)return;
+  s.battle.exhaustPile=s.battle.exhaustPile||[];
+  s.battle.exhaustPile.push(card);
+  s.battle.exhaustCount=(s.battle.exhaustCount||0)+1;
+  addPop(s,"p","🔥廃棄","#ff7043");
+  if(cause==="self")s.log.push(`🔥 ${card.name} は燃え尽きた（廃棄）`);
+  if(hasR(s,"ashring")){draw(s,1);s.log.push("💍 灰の指輪: 廃棄で1ドロー");}
+}
 
 // ═══ カード ═══
 const EFF={
@@ -113,6 +123,11 @@ const EFF={
   accel:s=>{s.battle.energy+=1;draw(s,1);},
   cleanse:s=>{s.run.poison=0;s.run.burn=0;s.run.weakened=0;const ci=s.battle.hand.findIndex(c=>c.type==="curse");if(ci>=0)s.battle.hand.splice(ci,1);addPop(s,"p","✨浄化","#ba68c8");},
   scout:s=>draw(s,2),
+  blast:s=>dmgE(s,s.ti,25),"blast+":s=>dmgE(s,s.ti,32),
+  backwater:s=>{s.run.str+=3;addPop(s,"p","💪+3","#ffd54f");},"backwater+":s=>{s.run.str+=4;addPop(s,"p","💪+4","#ffd54f");},
+  emheal:s=>{s.run.hp=Math.min(s.run.hp+15,s.run.maxHp);addPop(s,"p","+15❤️","#66bb6a");},"emheal+":s=>{s.run.hp=Math.min(s.run.hp+22,s.run.maxHp);addPop(s,"p","+22❤️","#66bb6a");},
+  ashstrike:s=>dmgE(s,s.ti,(s.battle.exhaustCount||0)*5),"ashstrike+":s=>dmgE(s,s.ti,(s.battle.exhaustCount||0)*7),
+  recycle:s=>{if(s.battle.discardPile.length)s.recycle={n:1};},"recycle+":s=>{if(s.battle.discardPile.length)s.recycle={n:Math.min(2,s.battle.discardPile.length)};},
 };
 // rarity: c=common u=uncommon r=rare
 const CM={
@@ -123,6 +138,11 @@ const CM={
   pierce:{name:"貫通撃",icon:"🗡️",cost:2,type:"attack",color:"#e74c3c",desc:"シールド無視20ダメージ",r:"u"},
   reckless:{name:"捨て身",icon:"💀",cost:2,type:"attack",color:"#e74c3c",desc:"30ダメージ 自傷8",r:"u"},
   poison:{name:"毒霧",icon:"☠️",cost:1,type:"attack",color:"#9ccc65",desc:"6ダメージ+毒3",r:"c"},
+  blast:{name:"爆裂火薬",icon:"🧨",cost:2,type:"attack",color:"#e74c3c",desc:"25ダメージ 使用後廃棄",up:"32ダメージ 使用後廃棄",upId:"blast+",r:"u",exhaust:true},
+  ashstrike:{name:"灰の一撃",icon:"🔥",cost:1,type:"attack",color:"#e74c3c",desc:"廃棄枚数×5ダメージ",up:"廃棄枚数×7ダメージ",upId:"ashstrike+",r:"r"},
+  backwater:{name:"背水の陣",icon:"🩸",cost:1,type:"skill",color:"#2ecc71",desc:"筋力+3 使用後廃棄",up:"筋力+4 使用後廃棄",upId:"backwater+",r:"u",exhaust:true},
+  emheal:{name:"緊急治療",icon:"🚑",cost:1,type:"skill",color:"#2ecc71",desc:"HP15回復 使用後廃棄",up:"HP22回復 使用後廃棄",upId:"emheal+",r:"c",exhaust:true},
+  recycle:{name:"リサイクル",icon:"♻️",cost:1,type:"skill",color:"#2ecc71",desc:"捨て札1枚を手札へ",up:"捨て札2枚を手札へ",upId:"recycle+",r:"u"},
   allcut:{name:"全力斬り",icon:"🌟",cost:99,type:"attack",color:"#f1c40f",desc:"手札の枚数×12ダメージ",r:"r"},
   wall:{name:"防壁",icon:"🛡️",cost:1,type:"defend",color:"#3498db",desc:"シールド8",up:"シールド12",upId:"wall+",r:"c"},
   barrier:{name:"結界",icon:"🛡️",cost:2,type:"defend",color:"#3498db",desc:"シールド16",r:"c"},
@@ -164,6 +184,7 @@ const RELICS={
   wardcharm:{name:"呪い返しの護符",icon:"🧿",desc:"呪い付与を50%で無効"},
   firecloak:{name:"火消しの外套",icon:"🧥",desc:"炎上ダメージ半減"},
   voidheart:{name:"虚無の心臓",icon:"🖤",desc:"最大HP-15、最大エネ+1"},
+  ashring:{name:"灰の指輪",icon:"💍",desc:"カード廃棄時1ドロー"},
 };
 function mr(id){return{...RELICS[id],id};}
 
@@ -197,9 +218,9 @@ const EN={
     cards:{judge:{name:"裁きの剣",dmg:12},stance:{name:"構え",shield:10,counter:14},execute:{name:"断罪",dmg:22},mercy:{name:"慈悲の手当",heal:12},holy:{name:"聖裁",dmg:16,weaken:2}}},
   momo:{name:"毒舌の魔女もも",icon:"🖤",hp:140,maxHp:140,boss:true,
     phase1deck:["claw","fog","claw","pot","kiss","claw","elixir"],
-    phase2deck:["fog2","claw2","convert","pot2","claw2","fog2","convert","doll"],
+    phase2deck:["fog2","claw2","convert","memfog","pot2","claw2","fog2","convert"],
     lines:["あら...勇者さん？ ふーん...普通ね"],phase2lines:["ちょっと、しぶといんだけど。褒めてないからね？"],
-    cards:{claw:{name:"毒の爪",dmg:7,poison:2},fog:{name:"猛毒の霧",poison:5},pot:{name:"呪いの壺",shield:10},elixir:{name:"回復の薬",heal:18},kiss:{name:"毒のキス",dmg:5,poison:3,weaken:1},claw2:{name:"毒の爪+",dmg:8,poison:3},fog2:{name:"猛毒の霧+",poison:6},convert:{name:"毒変換",convertPoison:3},pot2:{name:"呪いの壺+",shield:12},doll:{name:"呪いの人形",curse:"pain"}}},
+    cards:{claw:{name:"毒の爪",dmg:7,poison:2},fog:{name:"猛毒の霧",poison:5},pot:{name:"呪いの壺",shield:10},elixir:{name:"回復の薬",heal:18},kiss:{name:"毒のキス",dmg:5,poison:3,weaken:1},claw2:{name:"毒の爪+",dmg:8,poison:3},fog2:{name:"猛毒の霧+",poison:6},convert:{name:"毒変換",convertPoison:3},pot2:{name:"呪いの壺+",shield:12},doll:{name:"呪いの人形",curse:"pain"},memfog:{name:"記憶の霧",handExhaust:1,poison:2}}},
   // ── S2 ──
   imp:{name:"炎のインプ",icon:"😈",hp:38,maxHp:38,
     deck:["fb","fb","boom","dance","fb"],lines:["あっちっち！ 俺だけに！"],
@@ -208,8 +229,8 @@ const EN={
     deck:["big","big","bash","big","thrust"],lines:["守りは任せろ。...攻撃？ 知らん"],
     cards:{big:{name:"大盾",shield:14},bash:{name:"シールドバッシュ",shieldBash:true},thrust:{name:"突き",dmg:9}}},
   cursist:{name:"呪い師",icon:"👻",hp:30,maxHp:30,
-    deck:["hand","bolt","song","bolt","hand"],lines:["呪いのカード、プレゼント〜♪"],
-    cards:{hand:{name:"呪いの手",dmg:5,curse:"fatigue"},bolt:{name:"暗黒弾",dmg:9},song:{name:"呪詛",curse:"pain"}}},
+    deck:["hand","bolt","mug","song","bolt","hand"],lines:["呪いのカード、プレゼント〜♪"],
+    cards:{hand:{name:"呪いの手",dmg:5,curse:"fatigue"},bolt:{name:"暗黒弾",dmg:9},song:{name:"呪詛",curse:"pain"},mug:{name:"強奪",dmg:6,handDiscard:1}}},
   goliath:{name:"ゴリアテ",icon:"🦍",hp:140,maxHp:140,elite:true,
     deck:["fist","rally","punch","fist","press","stomp","fist","rally","punch"],
     lines:["ルールは簡単だ。俺が殴る。お前が倒れる。以上！"],
@@ -237,7 +258,7 @@ const EN={
     lines:["ようこそ我が城へ♪ お前で147人目の挑戦者♡"],
     phase2lines:["...ほう。なかなかやるじゃん。ちょっと本気出すね♡"],
     phase3lines:["パンの耳を捨てる者に、未来はないッ！！！"],
-    cards:{tyrant:{name:"暴虐の一撃",dmg:20},despair:{name:"絶望の布告",curse:"fatigue"},oppress:{name:"圧政",dmg:15,energyDrain:1},tshield:{name:"暴虐の盾",shield:20},fear:{name:"恐怖支配",weaken:2},
+    cards:{tyrant:{name:"暴虐の一撃",dmg:20},despair:{name:"絶望の布告",curse:"fatigue"},oppress:{name:"圧政",dmg:15,energyDrain:1,handDiscard:1},tshield:{name:"暴虐の盾",shield:20},fear:{name:"恐怖支配",weaken:2},
       awaken:{name:"暴虐覚醒",selfStr:3,shield:10},rush:{name:"暴虐連撃",dmg:12,hits:2},despair2:{name:"絶望の布告",curse:"pain"},majesty:{name:"魔王の威厳",heal:25,shield:10},
       doom:{name:"終焉宣告",doom:3},dance:{name:"暴虐乱舞",dmg:10,hits:3},tshield3:{name:"暴虐の盾+",shield:25}}},
 };
@@ -378,8 +399,8 @@ function SoraAdventure(){
   function initBattle(s,eid){
     const t=EN[eid];if(!t)return;
     s.screen="battle";
-    s.battle={hand:[],drawPile:shuffle(s.run.deck),discardPile:[],energy:s.run.maxEnergy,turn:1,atkN:0,defN:0,eHinted:false};
-    s.enemies=[makeE(eid)];s.ti=0;
+    s.battle={hand:[],drawPile:shuffle(s.run.deck),discardPile:[],exhaustPile:[],energy:s.run.maxEnergy,turn:1,atkN:0,defN:0,eHinted:false,exhaustCount:0};
+    s.enemies=[makeE(eid)];s.ti=0;s.recycle=null;
     s.run.shield=0;s.run.counter=0;s.run.thorns=0;s.run.weakened=0;s.run.energyDebt=0;
     s.log=[`${t.icon} ${t.name} が現れた！`];s.hint=eid==="mimic"?GH.mimic:null;s.roiMsg="";
     if(hasR(s,"mirror")){s.run.shield+=4;}
@@ -430,7 +451,7 @@ function SoraAdventure(){
       else{if(s.run.potions.length<3){const p=mp(pick(Object.keys(POTIONS)));s.run.potions.push(p);s.log=[`🔮 魔法の泉で ${p.name} を瓶詰め！`];}else{s.run.gold+=20;s.log=["🔮 泉で20G拾った"];}}
       s.run.row++;s.suzuMsg=suzu("event");}
     else if(node.type==="treasure"){
-      const pool=["tome","lifering","mirror","wardcharm","poisonring"].filter(id=>!hasR(s,id));
+      const pool=["tome","lifering","mirror","wardcharm","poisonring","ashring"].filter(id=>!hasR(s,id));
       if(pool.length){const r=mr(pick(pool));s.run.relics.push(r);s.log=[`📦 宝箱！ ${r.icon}${r.name}(${r.desc})を入手！`];}
       else{s.run.gold+=50;s.log=["📦 宝箱！ +50G"];}
       s.run.row++;s.suzuMsg=suzu("treasure");}
@@ -454,6 +475,16 @@ function SoraAdventure(){
     s.log.push(`🧪 ${p.name} を使用！`);
   });
 
+  // ═══ リサイクル（捨て札→手札選択） ═══
+  const pickRecycle=idx=>upd(s=>{
+    if(!s.recycle||!s.battle)return;
+    const c=s.battle.discardPile[idx];if(!c)return;sfx("click");
+    s.battle.discardPile.splice(idx,1);s.battle.hand.push(c);
+    s.log.push(`♻️ ${c.name} を手札に戻した`);
+    s.recycle.n--;
+    if(s.recycle.n<=0||s.battle.discardPile.length===0)s.recycle=null;
+  });
+
   // ═══ カード使用 ═══
   const playCard=idx=>upd(s=>{
     if(s.screen!=="battle"||!s.battle)return;
@@ -472,7 +503,8 @@ function SoraAdventure(){
     if(card.type==="attack"&&tgt&&tgt.hp>0&&tgt.counterStance>0){
       dmgP(s,tgt.counterStance);sfx("hit");
       s.log.push(`🔄💥 ${tgt.name}の反撃発動！ ${tgt.counterStance}ダメージ！`);}
-    s.battle.discardPile.push(card);s.log.push(`⚔️ ${card.name} → ${tgt?.name||"?"}`);
+    if(card.exhaust)exhaustCard(s,card,"self");else s.battle.discardPile.push(card);
+    s.log.push(`⚔️ ${card.name} → ${tgt?.name||"?"}`);
     if(!s.hint&&s.run.poison>=5)s.hint=GH.poison;
     if(!s.hint&&s.run.burn>=4)s.hint=GH.burn;
     if(!s.hint&&s.run.hp<=s.run.maxHp*.25&&card.type==="attack")s.hint=GH.lowHp;
@@ -582,6 +614,13 @@ function SoraAdventure(){
     if(card.summon&&s.enemies.length<3){const ne=makeE(card.summon);if(ne){s.enemies.push(ne);s.log.push(`${ne.icon} ${ne.name} が現れた！`);showInt(s,s.enemies.length-1);if(!s.hint)s.hint=GH.multi;}}
     if(card.shieldBash){const bd=Math.floor(e.shield*.5);if(bd>0){dmgP(s,bd);sfx("hit");s.log.push(`🛡️💥 シールドバッシュ ${bd}ダメージ！`);}}
     if(card.energyDrain)s.run.energyDebt=(s.run.energyDebt||0)+card.energyDrain;
+    // 敵の手札破壊（0枚時はスキップ）
+    if(card.handExhaust){for(let h=0;h<card.handExhaust;h++){if(!s.battle.hand.length)break;
+      const ri=Math.floor(Math.random()*s.battle.hand.length);const lost=s.battle.hand.splice(ri,1)[0];
+      s.log.push(`🌫️ 「${lost.name}」が記憶の霧に消えた！（廃棄）`);exhaustCard(s,lost,"enemy");}}
+    if(card.handDiscard){for(let h=0;h<card.handDiscard;h++){if(!s.battle.hand.length)break;
+      const ri=Math.floor(Math.random()*s.battle.hand.length);const lost=s.battle.hand.splice(ri,1)[0];
+      s.battle.discardPile.push(lost);s.log.push(`💢 「${lost.name}」が奪われた！（捨て札へ）`);}}
     showInt(s,i);
   }
 
@@ -657,6 +696,19 @@ function SoraAdventure(){
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
         {gs.run.relics.map((r,i)=>(<div key={i} style={{background:"#1a1a2e",border:"1px solid #f5c518",borderRadius:8,padding:6,fontSize:10}}>{r.icon} {r.name}<div style={{fontSize:8,color:P.dim}}>{r.desc}</div></div>))}
       </div></>}
+    </div>):null;
+
+  const RecycleModal=()=>gs.recycle&&gs.battle?(
+    <div className="fadein" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.9)",zIndex:55,display:"flex",flexDirection:"column",padding:16,maxWidth:480,margin:"0 auto"}}>
+      <div style={{fontSize:15,fontWeight:700,marginBottom:6,color:"#fff"}}>♻️ 捨て札から手札へ戻す（あと{gs.recycle.n}枚）</div>
+      <div style={{fontSize:11,color:P.dim,marginBottom:10}}>戻したいカードをタップ</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",overflowY:"auto"}}>
+        {gs.battle.discardPile.map((c,i)=>(<button key={c.uid} onClick={()=>pickRecycle(i)}
+          style={{background:P.cardBg,border:`2px solid ${c.color}`,borderRadius:8,padding:6,minWidth:70,display:"flex",flexDirection:"column",alignItems:"center",gap:2,cursor:"pointer",touchAction:"manipulation"}}>
+          <div style={{fontSize:16}}>{c.icon}</div><div style={{fontSize:10,color:c.color,fontWeight:700}}>{c.name}</div>
+          <div style={{fontSize:8,color:P.dim}}>{c.desc}</div><div style={{fontSize:9,color:P.gold}}>⚡{c.cost}</div>
+        </button>))}
+      </div>
     </div>):null;
 
   const HelpModal=()=>gs.showHelp?(
@@ -865,7 +917,7 @@ function SoraAdventure(){
     const{run,battle:b,enemies:ens}=gs;const myPct=Math.max(0,run.hp/run.maxHp*100);
     const aliveN=ens.filter(x=>x.hp>0).length;
     const doomE=ens.find(e=>e.hp>0&&e.doom>0);
-    return(<div style={st.wrap}><style>{CSS}</style><DeckModal/><HelpModal/>
+    return(<div style={st.wrap}><style>{CSS}</style><DeckModal/><HelpModal/><RecycleModal/>
       <div className={gs.shakeOn?"shake":""} style={{padding:10,display:"flex",flexDirection:"column",minHeight:"100dvh"}}>
         {doomE&&<div className="doomP" style={{textAlign:"center",fontSize:15,fontWeight:900,marginBottom:4}}>💀 終焉まで {doomE.doom} ターン 💀</div>}
         {/* 敵 */}
@@ -899,6 +951,7 @@ function SoraAdventure(){
                 {e.intent.burn?` +炎上${e.intent.burn}`:""}{e.intent.selfStr?` 💪+${e.intent.selfStr}`:""}{e.intent.shieldBash?" 盾バッシュ!":""}
                 {e.intent.doubleNext?<span style={{color:"#ff1744"}}> 次攻撃2倍!</span>:""}
                 {e.intent.doom?<span style={{color:"#ff1744"}}> 即死ﾀｲﾏｰ!</span>:""}{e.intent.energyDrain?" ⚡-1":""}{e.intent.nothing?" (様子見)":""}
+                {e.intent.handExhaust?<span style={{color:"#ff7043"}}> 手札廃棄!</span>:""}{e.intent.handDiscard?<span style={{color:"#ff9800"}}> 手札強奪!</span>:""}
               </div>}
             </div>);})}
         </div>
@@ -925,7 +978,7 @@ function SoraAdventure(){
                 <span>🛡️{run.shield}{run.counter>0?<span style={{color:"#4fc3f7"}}> 🔄{run.counter}</span>:""}</span>
                 <span>⚡{b.energy}/{run.maxEnergy}</span>
                 <span>💪{run.str}{run.weakened>0?<span style={{color:"#ff9800"}}>(弱{run.weakened})</span>:""}</span>
-                <span>🃏山{b.drawPile.length}捨{b.discardPile.length}</span>
+                <span>🃏山{b.drawPile.length}捨{b.discardPile.length}{b.exhaustPile&&b.exhaustPile.length>0?<span style={{color:"#ff7043"}}> 🔥{b.exhaustPile.length}</span>:""}</span>
               </div>
               {(run.poison>0||run.burn>0)&&<div style={{fontSize:9,color:"#ff9800",marginTop:2}}>{run.poison>0?`☠️毒${run.poison} `:""}{run.burn>0?`🔥炎上${run.burn}`:""}</div>}
             </div>
