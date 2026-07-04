@@ -171,6 +171,13 @@ function rollReward(){
   }
   return res;
 }
+// 指定レアリティからn枚（ステージ開始ボーナスのレア🔵カード3択等）
+function rollByRarity(rar,n){const pool=Object.keys(CM).filter(k=>CM[k].r===rar);return shuffle(pool).slice(0,n).map(mc);}
+// ステージ開始ボーナス3択の中身を生成（レア🔵カード3択 / 未所持レリック / 最大HP+10）
+function makeStageBonus(s){
+  const relicPool=Object.keys(RELICS).filter(id=>!hasR(s,id)&&id!=="voidheart");
+  return {cards:rollByRarity("u",3),relic:relicPool.length?mr(pick(relicPool)):null};
+}
 
 // ═══ レリック ═══
 const RELICS={
@@ -280,6 +287,7 @@ const SUZU={
   counterTip:["あ、構えてるわ♡ 攻撃しちゃダメよ♡ 女神の勘！","反撃される構えね♡ わたしなら…見てるだけだけど♡"],
   treasure:["宝箱♡ 女神パワーで中身を…占えないけど♡ 開けて♡"],
   event:["なにかありそう♡ 女神の直感よ♡ …外れても責任取らないけど♡"],
+  bonus:["女神からのプレゼントよ♡ 感謝しなさい♡","冒険の門出に、女神の祝福を…どれか選んで♡","スタートダッシュ大事よね♡ わたしのおすすめは…内緒♡"],
 };
 function suzu(c){return pick(SUZU[c]||SUZU.mapMove);}
 const MOKE={
@@ -499,7 +507,7 @@ function SoraAdventure(){
     meta:Object.assign({totalRuns:0,bestStage:0,clears:0},store.get("sora:meta")||{}),log:[],reward:null,hint:null,suzuMsg:"",mokeMsg:"",roiMsg:"",tut:0,showHelp:false,helpIntro:false,
     skit:null,skitIdx:0,skitEid:null,goTaunt:"",goAdvice:"",
     shopCards:[],shopPotions:[],shopRelic:null,shopScreen:null,restChoice:null,
-    pops:[],shakeOn:false,showDeck:false,endIdx:0,_rr:null,pinkFlash:false,gomiMsg:"",
+    pops:[],shakeOn:false,showDeck:false,endIdx:0,_rr:null,pinkFlash:false,gomiMsg:"",stageBonus:null,
   });
   const[tick,setTick]=useState(0);const gs=gsRef.current;
   const rr=useCallback(()=>setTick(t=>t+1),[]);
@@ -551,6 +559,8 @@ function SoraAdventure(){
     s.enemies=[];s.log=[];s.suzuMsg=suzu("mapStart");s.mokeMsg="";s.gomiMsg="";
     if(!s.meta.rulesSeen){s.meta.rulesSeen=true;s.showHelp=true;s.helpIntro=true;}
     if(s.meta.totalRuns>1)s.log=["🗡️ 周回ボーナス:「錆びた剣」を装備して開始！"];
+    // ステージ開始ボーナス（S1開幕含む全3回・スレスパNeow式）
+    s.stageBonus=makeStageBonus(s);s.screen="stageBonus";s.suzuMsg=suzu("bonus");
   });
 
   const selectNode=node=>upd(s=>{
@@ -774,6 +784,9 @@ function SoraAdventure(){
       s.log.push("🦍 ゴリアテ「…おっと。見た？ …見てないよね？ ならヨシ！ じゃあな挑戦者！ 悪くなかったぞ♪」");
       s.pinkFlash=true;setTimeout(()=>{gsRef.current.pinkFlash=false;rr();},320);
     }
+    // ボス撃破後回復（もも/てんぷらのみ30%。ろいは早期return済で対象外・エリート対象外）
+    let bossHeal=0;
+    if(isBoss){bossHeal=Math.floor(s.run.maxHp*0.3);s.run.hp=Math.min(s.run.hp+bossHeal,s.run.maxHp);s.log.push(`❤️ ボス撃破ボーナス！ HP+${bossHeal} 回復`);}
     let gold=isBoss?100:isElite?44:22;  // ノード増インフレ抑制: 戦闘/エリート報酬を約12%減
     if(s.run.pendingBattleBonus>0){gold+=s.run.pendingBattleBonus;s.log.push(`🫧 親スライムのお礼 +${s.run.pendingBattleBonus}G！`);s.run.pendingBattleBonus=0;}
     const _stolen=s.enemies.reduce((a,e)=>a+(e.stolen||0),0);
@@ -784,26 +797,34 @@ function SoraAdventure(){
     else if(isElite&&Math.random()<.5&&!hasR(s,"poisonring"))relicDrop=mr("poisonring");
     if(relicDrop){s.run.relics.push(relicDrop);}
     if(isBoss&&s.run.potions.length<3)s.run.potions.push(mp(pick(Object.keys(POTIONS))));
-    s.reward={cards:rollReward(),gold,isBoss,relicDrop};s.screen="reward";
+    s.reward={cards:rollReward(),gold,isBoss,relicDrop,bossHeal};s.screen="reward";
   }
   function onLose(s){sfx("lose");s.screen="gameOver";s.meta.bestStage=Math.max(s.meta.bestStage,s.run?.stage||1);s.goTaunt=pick(RT);s.goAdvice=pick(GD);}
 
   const pickReward=card=>upd(s=>{
     sfx("click");
     if(card)s.run.deck.push(card);
-    const wasBoss=s.reward?.isBoss;s.reward=null;
+    const wasBoss=s.reward?.isBoss;s.reward=null;s.hint=null;s.gomiMsg="";
     if(wasBoss&&s.run.stage<3){
       s.run.stage++;s.run.row=0;s.run.map=genMap(s.run.stage);
       s.suzuMsg=suzu("stageUp");s.mokeMsg=s.run.stage===2?MOKE.stage2:MOKE.stage3;
       s.log=[`🎉 ステージ${s.run.stage}「${SN[s.run.stage]}」へ！`];
-    }else{s.run.row++;s.mokeMsg="";}
-    s.screen="map";s.hint=null;s.gomiMsg="";
+      s.stageBonus=makeStageBonus(s);s.screen="stageBonus";s.suzuMsg=suzu("bonus");return;  // 各ステージ突入時のボーナス3択
+    }
+    s.run.row++;s.mokeMsg="";s.screen="map";
     // ゴリアテ撃破後: ゴミカスの正体示唆・すずの補完セリフをプールから
     if(s.run.goliathDefeated){
       if(Math.random()<.45)s.gomiMsg=pick(GOMI_GOLIATH);
       if(Math.random()<.35)s.suzuMsg="あのチャンプ、なんかいい匂いした…魔王城の香水と同じ…あら? なんでわたしそれ知ってるのかしら♡";
     }
   });
+  // ═══ ステージ開始ボーナス3択（スキップ不可） ═══
+  const pickStageBonusCard=idx=>upd(s=>{if(!s.stageBonus)return;const c=s.stageBonus.cards[idx];if(!c)return;sfx("click");
+    s.run.deck.push(c);s.log=[`🎁 女神の祝福: ${c.name} をデッキに追加！`];s.stageBonus=null;s.screen="map";});
+  const pickStageBonusRelic=()=>upd(s=>{if(!s.stageBonus||!s.stageBonus.relic)return;sfx("click");
+    s.run.relics.push(s.stageBonus.relic);s.log=[`🎁 女神の祝福: レリック ${s.stageBonus.relic.icon}${s.stageBonus.relic.name} を入手！`];s.stageBonus=null;s.screen="map";});
+  const pickStageBonusHp=()=>upd(s=>{if(!s.stageBonus)return;sfx("click");
+    s.run.maxHp+=10;s.log=["🎁 女神の祝福: 最大HP+10！"];s.stageBonus=null;s.screen="map";});
 
   const buyCard=idx=>upd(s=>{const it=s.shopCards[idx];if(!it||s.run.gold<it.price)return;sfx("click");
     s.run.gold-=it.price;s.run.deck.push(it.card);s.shopCards.splice(idx,1);s.log=[`🛡️ ${it.card.name} を購入！`];});
@@ -1260,12 +1281,42 @@ function SoraAdventure(){
       </div></div>);
   }
 
+  // ══ STAGE BONUS（ステージ開始ボーナス3択・スキップ不可） ══
+  if(gs.screen==="stageBonus"&&gs.stageBonus&&gs.run){
+    const sb=gs.stageBonus;
+    return(<div style={st.wrap}><style>{CSS}</style><HelpModal/>
+      <div className="fadein" style={{padding:16,minHeight:"100dvh",display:"flex",flexDirection:"column",gap:12}}>
+        <div style={{fontSize:17,fontWeight:900,textAlign:"center",background:`linear-gradient(135deg,${P.accent},${P.gold})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>🎁 女神からの祝福</div>
+        <div style={{...st.suzuBox}}>🐑 すず「{gs.suzuMsg}」</div>
+        <div style={{fontSize:12,color:P.dim,textAlign:"center"}}>どれか1つ選んでください（スキップ不可）</div>
+        <div style={{fontSize:13,fontWeight:700,marginTop:4}}>① レアカード獲得（🔵から1枚デッキへ）</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center"}}>
+          {sb.cards.map((c,i)=>(
+            <button key={c.uid} onClick={()=>pickStageBonusCard(i)}
+              style={{width:100,background:P.cardBg,border:`2px solid ${c.color}`,borderRadius:12,padding:12,display:"flex",flexDirection:"column",alignItems:"center",gap:4,cursor:"pointer",touchAction:"manipulation"}}>
+              <div style={{fontSize:9}}>{rarityBadge(c.r)}</div>
+              <div style={{fontSize:26}}>{c.icon}</div>
+              <div style={{fontSize:12,fontWeight:700,color:c.color}}>{c.name}</div>
+              <div style={{fontSize:9,color:P.dim}}>{c.desc}</div>
+              <div style={{fontSize:10,color:P.gold}}>⚡{c.cost}</div>
+            </button>))}
+        </div>
+        <div style={{fontSize:13,fontWeight:700,marginTop:4}}>② レリック獲得</div>
+        {sb.relic
+          ?<button onClick={pickStageBonusRelic} style={{...st.btn("#c9a227"),textAlign:"left",fontSize:13}}>{sb.relic.icon} {sb.relic.name} — {sb.relic.desc}</button>
+          :<div style={{fontSize:11,color:P.dim}}>（未所持レリックが無いため選択不可・①か③を選んでね）</div>}
+        <div style={{fontSize:13,fontWeight:700,marginTop:4}}>③ 最大HP+10</div>
+        <button onClick={pickStageBonusHp} style={{...st.btn("#2ecc71"),textAlign:"left",fontSize:13}}>❤️ 最大HP+10（回復なし・最大値のみ増加）</button>
+      </div></div>);
+  }
+
   // ══ REWARD ══
   if(gs.screen==="reward"&&gs.reward)return(
     <div style={st.wrap}><style>{CSS}</style><FlashOverlay/>
       <div className="fadein" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100dvh",padding:20,gap:14}}>
         <div style={{fontSize:24,fontWeight:700}}>🎉 勝利！</div>
         <div style={{fontSize:14,color:P.gold}}>+{gs.reward.gold}G</div>
+        {gs.reward.bossHeal>0&&<div style={{fontSize:14,color:"#66bb6a",fontWeight:700}}>❤️ ボス撃破ボーナス HP+{gs.reward.bossHeal} 回復！</div>}
         {gs.reward.relicDrop&&<div style={{background:"rgba(245,197,24,0.1)",border:"1px solid #f5c518",borderRadius:10,padding:10,fontSize:13}}>
           🏺 レリック入手: {gs.reward.relicDrop.icon}{gs.reward.relicDrop.name}<div style={{fontSize:10,color:P.dim}}>{gs.reward.relicDrop.desc}</div></div>}
         <div style={{...st.suzuBox,maxWidth:300}}>🐑 すず「{gs.suzuMsg}」</div>
