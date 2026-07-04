@@ -160,16 +160,26 @@ const CM={
 };
 function mc(id){const m=CM[id];if(!m)return null;return{...m,id,uid:uid(),enhanced:false};}
 function enhance(c){if(c.enhanced||!c.up)return false;c.enhanced=true;c.desc=c.up;c.name+="＋";c.id=c.upId||c.id;return true;}
-function rollReward(){
-  const pool=Object.keys(CM).filter(k=>CM[k].r!=="x"&&k!=="slash"&&k!=="wall"&&k!=="heal");
-  const w=pool.map(k=>CM[k].r==="r"?12:CM[k].r==="u"?35:53);
+// 重み付き非復元サンプリング（n枚の異なるカード）
+function sampleCards(pool,weightFn,n){
   const res=[];const used=new Set();
-  while(res.length<3&&used.size<pool.length){
-    let tot=0;for(let i=0;i<pool.length;i++)if(!used.has(i))tot+=w[i];
+  while(res.length<n&&used.size<pool.length){
+    let tot=0;for(let i=0;i<pool.length;i++)if(!used.has(i))tot+=weightFn(pool[i]);
     let r=Math.random()*tot;
-    for(let i=0;i<pool.length;i++){if(used.has(i))continue;r-=w[i];if(r<=0){used.add(i);res.push(mc(pool[i]));break;}}
+    for(let i=0;i<pool.length;i++){if(used.has(i))continue;r-=weightFn(pool[i]);if(r<=0){used.add(i);res.push(mc(pool[i]));break;}}
   }
   return res;
+}
+// カード報酬3択。レジェ🟡(r)の重みをステージ+エリートで引き上げ。レア🔵(u)は据え置き(現行~60%は目標25-40%を既に上回るため)
+function rollReward(stage=1,elite=false){
+  const pool=Object.keys(CM).filter(k=>CM[k].r!=="x"&&k!=="slash"&&k!=="wall"&&k!=="heal");
+  const rW=(stage>=3?24:stage>=2?14:12)*(elite?1.6:1);  // 🟡: S1~5% / S2~6% / S3~9%（エリートで更に+）
+  return sampleCards(pool,k=>CM[k].r==="r"?rW:CM[k].r==="u"?35:53,3);
+}
+// ボス報酬用: 全てレア🔵以上（u/r）から3択
+function rollRareReward(n){
+  const pool=Object.keys(CM).filter(k=>CM[k].r==="u"||CM[k].r==="r");
+  return sampleCards(pool,k=>CM[k].r==="r"?18:50,n);
 }
 // 指定レアリティからn枚（ステージ開始ボーナスのレア🔵カード3択等）
 function rollByRarity(rar,n){const pool=Object.keys(CM).filter(k=>CM[k].r===rar);return shuffle(pool).slice(0,n).map(mc);}
@@ -555,7 +565,7 @@ function SoraAdventure(){
     if(s.meta.clears>0){relics.push(mr("voidheart"));maxHp-=15;maxEnergy+=1;}
     s.run={stage:1,row:0,deck:initDeck(),relics,potions:[mp("healpot")],gold:50,hp:maxHp,maxHp,energy:maxEnergy,maxEnergy,
       str:0,shield:0,poison:0,burn:0,counter:0,thorns:0,weakened:0,energyDebt:0,map:genMap(1),
-      seenEvents:[],nextShopDiscount:false,nextBattleHandPenalty:0,forceBattleNext:false,pendingBattleBonus:0,roiGift:false,goliathDefeated:false,bossHintSeen:false};
+      seenEvents:[],nextShopDiscount:false,nextBattleHandPenalty:0,forceBattleNext:false,pendingBattleBonus:0,roiGift:false,goliathDefeated:false,bossHintSeen:false,rarePity:0};
     s.enemies=[];s.log=[];s.suzuMsg=suzu("mapStart");s.mokeMsg="";s.gomiMsg="";
     if(!s.meta.rulesSeen){s.meta.rulesSeen=true;s.showHelp=true;s.helpIntro=true;}
     if(s.meta.totalRuns>1)s.log=["🗡️ 周回ボーナス:「錆びた剣」を装備して開始！"];
@@ -794,10 +804,23 @@ function SoraAdventure(){
     s.run.gold+=gold;
     let relicDrop=null;
     if(isBoss){const map={momo:"ragemask",tempura:"hourglass"};const beaten=s.enemies.find(e=>EN[e.id]?.boss);const rid=map[beaten?.id];if(rid&&!hasR(s,rid))relicDrop=mr(rid);}
-    else if(isElite&&Math.random()<.5&&!hasR(s,"poisonring"))relicDrop=mr("poisonring");
+    else if(isElite){
+      // C-3: エリートはレリック確定。初回は毒の指輪固定、2体目以降は未所持からランダム
+      if(!hasR(s,"poisonring"))relicDrop=mr("poisonring");
+      else{const rp=Object.keys(RELICS).filter(id=>!hasR(s,id)&&id!=="voidheart");if(rp.length)relicDrop=mr(pick(rp));}
+    }
     if(relicDrop){s.run.relics.push(relicDrop);}
     if(isBoss&&s.run.potions.length<3)s.run.potions.push(mp(pick(Object.keys(POTIONS))));
-    s.reward={cards:rollReward(),gold,isBoss,relicDrop,bossHeal};s.screen="reward";
+    // カード報酬: ボスはレア確定3択(C-3)。通常/エリートはステージ別レア率+天井(rarePity・C-2、バトル報酬のみ)
+    let cards;
+    if(isBoss){cards=rollRareReward(3);}
+    else{
+      const forced=(s.run.rarePity||0)>=3;   // 3連続レアなし→次はレア以上1枚確定
+      cards=rollReward(s.run.stage,isElite);
+      if(forced&&!cards.some(c=>c.r!=="c"))cards[0]=mc(pick(Object.keys(CM).filter(k=>CM[k].r==="u"||CM[k].r==="r")));
+    }
+    if(cards.some(c=>c.r==="u"||c.r==="r"))s.run.rarePity=0;else s.run.rarePity=(s.run.rarePity||0)+1;
+    s.reward={cards,gold,isBoss,relicDrop,bossHeal};s.screen="reward";
   }
   function onLose(s){sfx("lose");s.screen="gameOver";s.meta.bestStage=Math.max(s.meta.bestStage,s.run?.stage||1);s.goTaunt=pick(RT);s.goAdvice=pick(GD);}
 
