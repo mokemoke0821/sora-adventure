@@ -301,6 +301,83 @@ const SN={1:"もだえの森",2:"灼熱のコロシアム",3:"虚無の王城"};
 const SP={1:["mushroom","mouse","slime"],2:["imp","knight","cursist"],3:["mimic","fallen","cursist"]};
 const SE={1:"sakuya",2:"goliath",3:"ryusei"};
 const SB={1:"momo",2:"tempura",3:"roi"};
+
+// ═══ イベント（15種・選択肢制・ステージ別出現テーブルS） ═══
+// カード選択を伴う選択肢の解決（eventPick経由）
+function applyEventPick(s){
+  const ep=s.eventPick;if(!ep)return;
+  if(ep.mode==="burn"){
+    const c=s.run.deck[ep.chosen[0]];if(!c)return;
+    s.run.deck.splice(ep.chosen[0],1);
+    s.run.hp=Math.min(s.run.hp+10,s.run.maxHp);
+    let extra="";
+    if(!hasR(s,"ashring")&&Math.random()<.10){s.run.relics.push(mr("ashring"));extra=" 灰の中から💍灰の指輪を発見！";}
+    s.log=[`🔥 ${c.name} を燃やした（デッキから廃棄）。HP10回復${extra}`];
+  }else if(ep.mode==="give"){
+    const c=s.run.deck[ep.chosen[0]];if(!c)return;const rank={c:0,u:1,r:2};
+    const pool=Object.keys(CM).filter(k=>CM[k].r!=="x"&&(rank[CM[k].r]??0)>=(rank[c.r]??0));
+    const nc=mc(pick(pool));s.run.deck.splice(ep.chosen[0],1);s.run.deck.push(nc);
+    s.log=[`🐴 ${c.name} を差し出し、${nc.name} を受け取った`];
+  }else if(ep.mode==="melt2"){
+    const idxs=ep.chosen.slice().sort((a,b)=>b-a);
+    idxs.forEach(i=>s.run.deck.splice(i,1));
+    const pool=Object.keys(CM).filter(k=>CM[k].r==="u");const nc=mc(pick(pool));s.run.deck.push(nc);
+    s.log=[`⚗️ 2枚を溶かし、${nc.name}(🔵) が生成された`];
+  }
+  s.eventPick=null;s.event=null;s.eventId=null;s.run.row++;s.screen="map";
+}
+const EVENTS={
+  shrine:{name:"古びた祠",S:[1,2,3],lines:[{ch:"🤓",nm:"ソラ",tx:"祠だ…なんだか祈りたくなりますね"}],
+    choices:[{t:"[A] 祈る → HP15回復",run:s=>{s.run.hp=Math.min(s.run.hp+15,s.run.maxHp);s.log=["🏚️ 祠に祈った。HP15回復"];}},
+      {t:"[B] 立ち去る",run:s=>{s.log=["🏚️ 祠を後にした"];}}]},
+  gomiGold:{name:"ゴミカスの落とし物",S:[1,2,3],lines:[{ch:"🐱",nm:"ゴミカス",tx:"拾い物だ。いるか？ 別に恩は着せねえよ"}],
+    choices:[{t:"[A] 受け取る → +30G",run:s=>{s.run.gold+=30;s.log=["🐱 ゴミカス「持ってけ」 +30G"];}},
+      {t:"[B] 遠慮する",run:s=>{s.log=["🐱 ゴミカス「変な奴だな」"];}}]},
+  gomiCard:{name:"ゴミカスのお下がり",S:[1,2,3],lines:[{ch:"🐱",nm:"ゴミカス",tx:"いらんカードがある。持ってけ。俺の趣味じゃない"}],
+    choices:[{t:"[A] もらう",run:s=>{const c=mc(pick(["counter","cleanse","rage","thorns","thunder"]));s.run.deck.push(c);s.log=[`🐱 ${c.name}を入手！`];}},
+      {t:"[B] 断る",run:s=>{s.log=["🐱 ゴミカス「そうか」"];}}]},
+  spring:{name:"魔法の泉",S:[1,2,3],lines:[{ch:"🤓",nm:"ソラ",tx:"魔法の泉だ…何か汲めそう"}],
+    choices:[{t:"[A] 瓶詰めする",run:s=>{if(s.run.potions.length<3){const p=mp(pick(Object.keys(POTIONS)));s.run.potions.push(p);s.log=[`🔮 ${p.name} を瓶詰め！`];}else{s.run.gold+=20;s.log=["🔮 ポーション満杯。20G拾った"];}}},
+      {t:"[B] 眺めるだけ → +10G",run:s=>{s.run.gold+=10;s.log=["🔮 泉で10G拾った"];}}]},
+  peddler:{name:"行商の荷馬車",S:[1,2,3],lines:[{ch:"🐴",nm:"行商人",tx:"へい、旅のお方。掘り出し物と交換しませんか"},{ch:"🤓",nm:"ソラ",tx:"怪しさしかない荷馬車ですね…"},{ch:"🐑",nm:"すず",tx:"女神鑑定によると…五分五分ね♡"}],
+    choices:[{t:"[A] カード1枚を差し出す（同レア以上と交換）",pick:"give"},
+      {t:"[B] 断る",run:s=>{s.log=["🐴 行商人「またどうぞ」"];}}]},
+  alchemy:{name:"錬金釜",S:[2,3],lines:[{ch:"🤓",nm:"ソラ",tx:"大釜がぐつぐつ…何か作れそうな"},{ch:"🐱",nm:"ゴミカス",tx:"錬金釜だ。2枚溶かして1枚出てくる。等価交換? いや、割と出目次第だ"}],
+    choices:[{t:"[A] カード2枚を投入（🔵ランダム生成）",pick:"melt2"},
+      {t:"[B] のぞき込む",run:s=>{if(Math.random()<.5){s.run.hp=Math.max(1,s.run.hp-5);s.log=["⚗️ 蒸気を浴びた…HP-5"];}else if(s.run.potions.length<3){const p=mp(pick(Object.keys(POTIONS)));s.run.potions.push(p);s.log=[`⚗️ 釜の底に ${p.name} を発見！`];}else{s.run.gold+=20;s.log=["⚗️ ポーション満杯。20G発見"];}}},
+      {t:"[C] 立ち去る",run:s=>{s.log=["⚗️ 立ち去った"];}}]},
+  gamble:{name:"賭博場",S:[2,3],lines:[{ch:"🎲",nm:"ディーラー",tx:"いらっしゃい。倍か、ゼロか。シンプルなゲームだ"},{ch:"🐑",nm:"すず",tx:"やめときなさい♡ …勝ったら半分わたしね♡"}],
+    choices:[{t:"[A] 所持金の半分を賭ける（50%で2倍）",run:s=>{const bet=Math.floor(s.run.gold/2);if(Math.random()<.5){s.run.gold+=bet;s.log=[`🎲 勝った！ +${bet}G`];}else{s.run.gold-=bet;s.log=[`🎲 没収…-${bet}G`];}}},
+      {t:"[B] 全額賭ける（40%で2.5倍）",run:s=>{const bet=s.run.gold;if(Math.random()<.4){const win=Math.floor(bet*1.5);s.run.gold+=win;s.log=[`🎲 大勝利！ +${win}G`];}else{s.run.gold=0;s.log=["🎲 全額没収…"];}}},
+      {t:"[C] 帰る",run:s=>{s.log=["🎲 ディーラー「賢明だ」"];}}]},
+  library:{name:"禁断の書庫",S:[3],lines:[{ch:"🤓",nm:"ソラ",tx:"読むなって書いてある本ほど読みたくなる…"},{ch:"🐑",nm:"すず",tx:"それ人間の悪いところよ♡ わたしは読んだけど♡"}],
+    choices:[{t:"[A] 読む（🟡カード+呪い）",run:s=>{const rares=Object.keys(CM).filter(k=>CM[k].r==="r");const rc=mc(pick(rares));s.run.deck.push(rc);const cu=mc("pain");s.run.deck.push(cu);s.log=[`📖 禁断の知識！ ${rc.name}(🟡)入手…だが呪い「${cu.name}」も混入`];}},
+      {t:"[B] 表紙だけ見る（次ショップ1枚半額）",run:s=>{s.run.nextShopDiscount=true;s.log=["📖 カード知識を得た。次のショップで1枚半額"];}},
+      {t:"[C] 閉じる",run:s=>{s.log=["📖 そっと閉じた"];}}]},
+  bonfire:{name:"焚き火",S:[1,2,3],lines:[{ch:"🤓",nm:"ソラ",tx:"焚き火だ…なんか、いらないものを燃やしたくなりますね"},{ch:"💤",nm:"もけもけ",tx:"わかるよ。過去とかね。…カードでいいんじゃない?"}],
+    choices:[{t:"[A] カード1枚を燃やす（廃棄+HP10）",pick:"burn"},
+      {t:"[B] 暖まるだけ → HP5回復",run:s=>{s.run.hp=Math.min(s.run.hp+5,s.run.maxHp);s.log=["🔥 暖まった。HP5回復"];}}]},
+  suzuLesson:{name:"すずの女神講座",S:[1,2],lines:[{ch:"🐑",nm:"すず",tx:"特別に女神の奥義を教えてあげる♡ 感謝しなさい♡"},{ch:"🤓",nm:"ソラ",tx:"奥義…って、あざとく笑う練習ですか?"},{ch:"🐑",nm:"すず",tx:"違うわよ!! …それは応用編!"}],
+    choices:[{t:"[A] 真面目に聞く",run:s=>{const r=Math.random();if(r<.34){s.run.maxHp+=5;s.run.hp+=5;s.log=["🐑 女神講座！ 最大HP+5"];}else if(r<.67){s.run.str+=1;s.log=["🐑 女神講座！ 筋力+1"];}else{s.run.gold+=30;s.log=["🐑 女神講座！ +30G"];}}},
+      {t:"[B] 聞き流す",run:s=>{s.log=["🐑 すず「聞きなさいよ!!」（好感度が下がった気がする）"];}}]},
+  niyaNap:{name:"にーやの昼寝スポット",S:[1,2,3],lines:[{ch:"😴",nm:"にーや",tx:"ここ…風が気持ちいいの…一緒に寝る…?"},{ch:"🤓",nm:"ソラ",tx:"冒険中なんですが…でも確かに眠く…"}],
+    choices:[{t:"[A] 少し寝る → HP20回復",run:s=>{s.run.hp=Math.min(s.run.hp+20,s.run.maxHp);if(Math.random()<.2){s.run.nextBattleHandPenalty=1;s.log=["😴 HP20回復。寝過ごした…次の戦闘は初手-1枚"];}else s.log=["😴 HP20回復。すっきり！"];}},
+      {t:"[B] 起こさず立ち去る",run:s=>{s.log=["😴 にーや「ん…いってらっしゃい…zzz」"];}}]},
+  mokeWatch:{name:"もけもけの定点観測",S:[2,3],lines:[{ch:"💤",nm:"もけもけ",tx:"やあ。ここ、冒険者がよく通るから観測してるんだ。…座ってるだけとも言う"},{ch:"🤓",nm:"ソラ",tx:"それ観測って言うんですか?"},{ch:"💤",nm:"もけもけ",tx:"147人見た。君は…そこそこ頑張ってるほう。上位30%くらい"}],
+    choices:[{t:"[A] 観測データを見せてもらう",run:s=>{s.run.bossHintSeen=true;s.log=["👁️ もけもけ「次のボスの行動順のクセ、教えとくよ」（ゴミカス相談所の廉価版）"];}},
+      {t:"[B] 隣に座る → +20G",run:s=>{s.run.gold+=20;s.log=["👁️ もけもけ「暇つぶし代。もらっといて」 +20G"];}}]},
+  lostSlime:{name:"迷子の子スライム",S:[1,2],lines:[{ch:"🫧",nm:"子スライム",tx:"ぷる…ぷるぷる…(泣いている)"},{ch:"🤓",nm:"ソラ",tx:"迷子…ですか? 親御さんは…"},{ch:"🐑",nm:"すず",tx:"女神の慈悲を見せる時ね♡ ソラ、なんとかしなさい♡"},{ch:"🤓",nm:"ソラ",tx:"丸投げ!?"}],
+    choices:[{t:"[A] 送り届ける（次は戦闘+報酬G+40）",run:s=>{s.run.forceBattleNext=true;s.run.pendingBattleBonus=40;s.log=["🫧 送り届けた。次ノードは戦闘に変化。親スライムのお礼(+40G)が待つ"];}},
+      {t:"[B] 見なかったことに",run:s=>{s.run.deck.push(mc("pain"));s.log=["🫧 見捨てた…呪い「痛み」(罪悪感)が混入"];}},
+      {t:"[C] すらいむ商会に相談 → -10G",run:s=>{s.run.gold=Math.max(0,s.run.gold-10);s.log=["🫧 商会の配送サービス。-10Gで解決"];}}]},
+  roiTrinket:{name:"ろい神の落とし物",S:[3],lines:[{ch:"🤓",nm:"ソラ",tx:"ハート型のアクセサリーが落ちてる…これって…"},{ch:"🐱",nm:"ゴミカス",tx:"魔王のだな。拾うか? 呪われてても知らんぞ"}],
+    choices:[{t:"[A] 拾う（レリック+呪い疲労）",run:s=>{const pool=["tome","lifering","mirror","wardcharm","poisonring","ashring","rusty","hourglass"].filter(id=>!hasR(s,id));if(pool.length)s.run.relics.push(mr(pick(pool)));s.run.deck.push(mc("fatigue"));s.log=["💗 レリックを入手！ だが呪い「疲労」(魔王の残留思念)も付いてきた"];}},
+      {t:"[B] 蹴っ飛ばす",run:s=>{if(Math.random()<.5){s.run.gold+=50;s.log=["💗 中からG+50が出てきた！"];}else s.log=["💗 何も出なかった"];}},
+      {t:"[C] そっと置いておく",run:s=>{s.run.roiGift=true;s.log=["💗 そっと置いた。…最終戦で何かが変わるかも"];}}]},
+  curseStone:{name:"呪いの石碑",S:[2,3],lines:[{ch:"🤓",nm:"ソラ",tx:"不気味な石碑だ…呪いの気配がする"},{ch:"🐱",nm:"ゴミカス",tx:"触るな…と言いたいが、壊せば何か出るかもな"}],
+    choices:[{t:"[A] お祈りする → HP10回復",run:s=>{s.run.hp=Math.min(s.run.hp+10,s.run.maxHp);s.log=["🗿 石碑に祈った。HP10回復"];}},
+      {t:"[B] 壊す → G+40+呪い1枚廃棄",run:s=>{s.run.gold+=40;const ci=s.run.deck.findIndex(c=>c.type==="curse");if(ci>=0){const rm=s.run.deck.splice(ci,1)[0];s.log=[`🗿 石碑を破壊！ +40G、呪い「${rm.name}」をデッキから廃棄`];}else s.log=["🗿 石碑を破壊！ +40G（廃棄できる呪いは無かった）"];}}]},
+};
 function genMap(stage){
   // マップ延長: 各ステージ9/10/11ノード（現行7/8/9から延長・入替機会増）
   const rows=stage===1?9:stage===2?10:11;const map=[];const pool=SP[stage];
@@ -330,8 +407,8 @@ function genMap(stage){
 function initDeck(){const d=[];for(let i=0;i<4;i++)d.push(mc("slash"));for(let i=0;i<4;i++)d.push(mc("wall"));for(let i=0;i<2;i++)d.push(mc("heal"));return d;}
 
 // ═══ 寸劇 ═══
-function skitLines(tmpl,type){
-  const n=tmpl.name;
+function skitLines(tmpl,type,run){
+  const n=tmpl.name;run=run||{};
   if(n.includes("もも"))return[
     {ch:"🤓",nm:"ソラ",tx:"ここが...ボスの部屋..."},
     {ch:"🐑",nm:"すず",tx:suzu("bossWarn1")},
@@ -350,18 +427,23 @@ function skitLines(tmpl,type){
     {ch:"🐑",nm:"すず",tx:"宇宙服なのに炎使い...ツッコんでいい？♡"},
     {ch:tmpl.icon,nm:n,tx:"うるせー！ カッコいいだろ！ ふざけんな！"},
     {ch:"🐑",nm:"すず",tx:"怒りっぽいわね♡ 可愛く応援してるから♡"}];
-  if(n.includes("ろい"))return[
-    {ch:"🤓",nm:"ソラ",tx:"ここが...魔王の玉座..."},
-    {ch:"🐑",nm:"すず",tx:suzu("bossWarn3")},
-    {ch:tmpl.icon,nm:n,tx:"ようこそ我が城へ、勇者...ソラとか言ったっけ？"},
-    {ch:tmpl.icon,nm:n,tx:"お前で147人目の挑戦者♪ 記念に特別サービスしてあげる♡"},
-    {ch:"🤓",nm:"ソラ",tx:"それ嬉しくないやつですよね..."},
-    {ch:tmpl.icon,nm:n,tx:"ていうかお前、ここまでのプレイひどかったよ？ 見てたんだけど"},
-    {ch:"🤓",nm:"ソラ",tx:"魔王が勇者のプレイ見てるんですか！？"},
-    {ch:tmpl.icon,nm:n,tx:"だってヒマなんだもん♪ あとお前がカード切るタイミングマジで下手"},
-    {ch:"🤓",nm:"ソラ",tx:"ほっといてください！"},
-    {ch:"🐑",nm:"すず",tx:"ソラ、あの魔王を倒せば税率98%が終わるわ♡"},
-    {ch:tmpl.icon,nm:n,tx:"わたしの政策を否定するなーっ！！ 行くよ♡"}];
+  if(n.includes("ろい")){
+    const arr=[
+      {ch:"🤓",nm:"ソラ",tx:"ここが...魔王の玉座..."},
+      {ch:"🐑",nm:"すず",tx:suzu("bossWarn3")},
+      {ch:tmpl.icon,nm:n,tx:"ようこそ我が城へ、勇者...ソラとか言ったっけ？"}];
+    if(run.roiGift)arr.push({ch:tmpl.icon,nm:n,tx:"あ、アクセ置いといてくれた人だ♪ 律儀〜。ちょっとオマケしといたげる♡"});
+    arr.push(
+      {ch:tmpl.icon,nm:n,tx:"お前で147人目の挑戦者♪ 記念に特別サービスしてあげる♡"},
+      {ch:"🤓",nm:"ソラ",tx:"それ嬉しくないやつですよね..."},
+      {ch:tmpl.icon,nm:n,tx:"ていうかお前、ここまでのプレイひどかったよ？ 見てたんだけど"},
+      {ch:"🤓",nm:"ソラ",tx:"魔王が勇者のプレイ見てるんですか！？"},
+      {ch:tmpl.icon,nm:n,tx:"だってヒマなんだもん♪ あとお前がカード切るタイミングマジで下手"},
+      {ch:"🤓",nm:"ソラ",tx:"ほっといてください！"},
+      {ch:"🐑",nm:"すず",tx:"ソラ、あの魔王を倒せば税率98%が終わるわ♡"},
+      {ch:tmpl.icon,nm:n,tx:"わたしの政策を否定するなーっ！！ 行くよ♡"});
+    return arr;
+  }
   if(type==="elite")return[
     {ch:"🤓",nm:"ソラ",tx:"え、あの...通してもらえませんか...？"},
     {ch:tmpl.icon,nm:n,tx:tmpl.lines[0]},
@@ -414,7 +496,12 @@ function SoraAdventure(){
     s.log=[`${t.icon} ${t.name} が現れた！`];s.hint=eid==="mimic"?GH.mimic:null;s.roiMsg="";
     if(hasR(s,"mirror")){s.run.shield+=4;}
     draw(s,5+(hasR(s,"tome")?1:0));
-    if(s.tut>0){s.tut=0;s.meta.tutDone=true;}
+    // にーや昼寝[A]寝過ごし: 初手手札-1
+    if(s.run.nextBattleHandPenalty>0&&s.battle.hand.length){s.battle.hand.splice(0,s.run.nextBattleHandPenalty).forEach(c=>s.battle.discardPile.push(c));s.log.push("😴 寝ぼけて初手が1枚少ない…");s.run.nextBattleHandPenalty=0;}
+    // もけもけ定点観測[A]: 次ボスの行動順ヒント
+    if(s.run.bossHintSeen&&t.boss){s.hint="もけもけの観測メモ: こいつは行動順が決まってる。数手先を読め";s.run.bossHintSeen=false;}
+    // ろい神の落とし物[C]: 最終戦で開幕シールド10ボーナス
+    if(s.run.roiGift&&eid==="roi"){s.run.shield+=10;s.log.push("💗 律儀さへのお礼か…開幕シールド+10！");}
     if(s.meta.totalRuns===1&&!s.meta.tutDone&&!s.meta.tutStarted){
       s.meta.tutStarted=true;s.tut=1;
       const ensure=id=>{if(s.battle.hand.some(c=>c.id===id))return;
@@ -433,7 +520,8 @@ function SoraAdventure(){
     if(s.meta.totalRuns>1)relics.push(mr("rusty"));
     if(s.meta.clears>0){relics.push(mr("voidheart"));maxHp-=15;maxEnergy+=1;}
     s.run={stage:1,row:0,deck:initDeck(),relics,potions:[mp("healpot")],gold:50,hp:maxHp,maxHp,energy:maxEnergy,maxEnergy,
-      str:0,shield:0,poison:0,burn:0,counter:0,thorns:0,weakened:0,energyDebt:0,map:genMap(1)};
+      str:0,shield:0,poison:0,burn:0,counter:0,thorns:0,weakened:0,energyDebt:0,map:genMap(1),
+      seenEvents:[],nextShopDiscount:false,nextBattleHandPenalty:0,forceBattleNext:false,pendingBattleBonus:0,roiGift:false,goliathDefeated:false,bossHintSeen:false};
     s.enemies=[];s.log=[];s.suzuMsg=suzu("mapStart");s.mokeMsg="";
     if(!s.meta.rulesSeen){s.meta.rulesSeen=true;s.showHelp=true;s.helpIntro=true;}
     if(s.meta.totalRuns>1)s.log=["🗡️ 周回ボーナス:「錆びた剣」を装備して開始！"];
@@ -441,25 +529,31 @@ function SoraAdventure(){
 
   const selectNode=node=>upd(s=>{
     sfx("click");
+    // 迷子の子スライム[A]: 次ノードを強制的に通常戦闘へ変化
+    if(s.run.forceBattleNext&&node.type!=="boss"){s.run.forceBattleNext=false;node={type:"battle",enemyPool:SP[s.run.stage]};s.log=["🫧 親スライムが待ち構えていた！"];}
     if(node.type==="battle"){initBattle(s,pick(node.enemyPool||["mushroom"]));s.suzuMsg=pick(["がんばって♡","女神が見守ってるわ♡","弱そうね♡ …たぶん♡"]);}
     else if(node.type==="elite"||node.type==="boss"){
       const eid=node.id;const t=EN[eid];if(!t){initBattle(s,eid);return;}
-      s.skit=skitLines(t,node.type);s.skitIdx=0;s.skitEid=eid;s.screen="skit";}
+      s.skit=skitLines(t,node.type,s.run);s.skitIdx=0;s.skitEid=eid;s.screen="skit";}
     else if(node.type==="rest"){s.restChoice=null;s.screen="rest";s.suzuMsg=suzu("rest");}
     else if(node.type==="swap"){s.swapChoice=null;s.screen="swap";s.suzuMsg=suzu("event");}
     else if(node.type==="shop"){
       const pool=Object.keys(CM).filter(k=>CM[k].r!=="x");
       s.shopCards=shuffle(pool).slice(0,4).map(id=>({card:mc(id),price:CM[id].r==="r"?70:CM[id].r==="u"?50:35}));
+      if(s.run.nextShopDiscount&&s.shopCards.length){s.shopCards[0].price=Math.floor(s.shopCards[0].price/2);s.shopCards[0].half=true;s.run.nextShopDiscount=false;}
       s.shopPotions=shuffle(Object.keys(POTIONS)).slice(0,2).map(id=>({potion:mp(id),price:30}));
       s.shopRelic=Math.random()<.4&&!hasR(s,"firecloak")?{relic:mr("firecloak"),price:120}:null;
       s.shopScreen="buy";s.screen="shop";s.suzuMsg=suzu("shop");}
     else if(node.type==="event"){
-      const r=Math.random();
-      if(r<.3){s.run.hp=Math.min(s.run.hp+15,s.run.maxHp);s.log=["🏚️ 祠で祈りを捧げた。HP15回復"];}
-      else if(r<.55){s.run.gold+=30;s.log=["🐱 ゴミカス「拾い物だ。持ってけ」 +30G"];}
-      else if(r<.8){const c=mc(pick(["counter","cleanse","rage","thorns","thunder"]));s.run.deck.push(c);s.log=[`🐱 ゴミカス「いらんから持ってけ」 ${c.name}を入手！`];}
-      else{if(s.run.potions.length<3){const p=mp(pick(Object.keys(POTIONS)));s.run.potions.push(p);s.log=[`🔮 魔法の泉で ${p.name} を瓶詰め！`];}else{s.run.gold+=20;s.log=["🔮 泉で20G拾った"];}}
-      s.run.row++;s.suzuMsg=suzu("event");}
+      // 抽選: 未見イベント優先・ステージ別出現テーブル(S)・全消化後は再抽選
+      s.run.seenEvents=s.run.seenEvents||[];
+      const stage=s.run.stage;
+      const avail=Object.keys(EVENTS).filter(id=>EVENTS[id].S.includes(stage));
+      const unseen=avail.filter(id=>!s.run.seenEvents.includes(id));
+      const poolIds=unseen.length?unseen:avail;
+      const eid=pick(poolIds);
+      s.run.seenEvents.push(eid);
+      s.eventId=eid;s.event=EVENTS[eid];s.eventPick=null;s.screen="event";s.suzuMsg=suzu("event");}
     else if(node.type==="treasure"){
       const pool=["tome","lifering","mirror","wardcharm","poisonring","ashring"].filter(id=>!hasR(s,id));
       if(pool.length){const r=mr(pick(pool));s.run.relics.push(r);s.log=[`📦 宝箱！ ${r.icon}${r.name}(${r.desc})を入手！`];}
@@ -642,6 +736,7 @@ function SoraAdventure(){
     s.log.push("🎉 勝利！");s.suzuMsg=suzu("bossWin");
     const isBoss=s.enemies.some(e=>EN[e.id]?.boss);const isElite=s.enemies.some(e=>EN[e.id]?.elite);
     let gold=isBoss?100:isElite?44:22;  // ノード増インフレ抑制: 戦闘/エリート報酬を約12%減
+    if(s.run.pendingBattleBonus>0){gold+=s.run.pendingBattleBonus;s.log.push(`🫧 親スライムのお礼 +${s.run.pendingBattleBonus}G！`);s.run.pendingBattleBonus=0;}
     const _stolen=s.enemies.reduce((a,e)=>a+(e.stolen||0),0);
     if(_stolen>0){gold+=_stolen+10;s.log.push(`💰 奪われた${_stolen}Gと慰謝料10Gを回収！`);}
     s.run.gold+=gold;
@@ -689,6 +784,23 @@ function SoraAdventure(){
     if(!same.length){s.log=["♻️ すらいむ「同レアの在庫が切れてる…すまんな」"];s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");return;}
     const nc=mc(pick(same));s.run.deck[idx]=nc;
     s.log=[`♻️ ${c.name} ⇔ ${nc.name} と物々交換！`];s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");});
+
+  // ═══ イベント選択 ═══
+  const chooseEvent=ci=>upd(s=>{
+    if(!s.event)return;const ch=s.event.choices[ci];if(!ch)return;sfx("click");
+    if(ch.pick){                                    // カード選択サブモードへ（デッキ不足なら中止）
+      const need=ch.pick==="melt2"?2:1;
+      if(s.run.deck.length<need){s.log=["…デッキが足りない"];s.event=null;s.eventId=null;s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");return;}
+      s.eventPick={mode:ch.pick,need,chosen:[]};return;
+    }
+    ch.run(s);s.event=null;s.eventId=null;s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");
+  });
+  const eventPickCard=idx=>upd(s=>{
+    if(!s.eventPick||s.eventPick.chosen.includes(idx))return;sfx("click");
+    s.eventPick.chosen.push(idx);
+    if(s.eventPick.chosen.length>=s.eventPick.need){applyEventPick(s);s.suzuMsg=suzu("mapMove");}
+  });
+  const cancelEventPick=()=>upd(s=>{s.eventPick=null;});
 
   // ═══ 共通UI ═══
   const st={
@@ -867,7 +979,7 @@ function SoraAdventure(){
                 <div style={{fontSize:20}}>{it.card.icon}</div>
                 <div style={{fontSize:11,fontWeight:700,color:it.card.color}}>{it.card.name}</div>
                 <div style={{fontSize:9,color:P.dim}}>{it.card.desc}</div>
-                <div style={{fontSize:11,color:P.gold}}>{it.price}G</div>
+                <div style={{fontSize:11,color:P.gold}}>{it.price}G{it.half?<span style={{color:"#4caf50"}}> 半額!</span>:""}</div>
               </button>))}
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -962,6 +1074,42 @@ function SoraAdventure(){
             </button>))}
         </div>
         <button style={{...st.btn("#555"),marginTop:16}} onClick={()=>upd(s=>{s.swapChoice=null;})}>戻る</button>
+      </div></div>);
+  }
+
+  // ══ EVENT（イベント） ══
+  if(gs.screen==="event"&&gs.event&&gs.run){
+    const ev=gs.event;const{run}=gs;
+    if(gs.eventPick)return(<div style={st.wrap}><style>{CSS}</style>
+      <div style={{padding:16,minHeight:"100dvh"}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>🃏 カードを選択（あと{gs.eventPick.need-gs.eventPick.chosen.length}枚）</div>
+        <div style={{fontSize:11,color:P.dim,marginBottom:10}}>{gs.eventPick.mode==="burn"?"燃やすカードを選択（デッキから恒久削除+HP10）":gs.eventPick.mode==="give"?"差し出すカードを選択（同レア以上と交換）":"溶かすカードを2枚選択"}</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {run.deck.map((card,i)=>{const sel=gs.eventPick.chosen.includes(i);
+            return(<button key={card.uid} onClick={()=>eventPickCard(i)} disabled={sel}
+              style={{background:sel?"#2a2a1a":P.cardBg,border:`2px solid ${sel?"#f1c40f":card.color}`,borderRadius:8,padding:7,
+                display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:sel?"default":"pointer",touchAction:"manipulation",minWidth:68,opacity:sel?.5:1}}>
+              <div style={{fontSize:9}}>{rarityBadge(card.r)}</div>
+              <div style={{fontSize:18}}>{card.icon}</div><div style={{fontSize:10,fontWeight:700,color:card.color}}>{card.name}</div>
+              <div style={{fontSize:8,color:P.dim}}>{card.desc}</div>
+            </button>);})}
+        </div>
+        <button style={{...st.btn("#555"),marginTop:16}} onClick={cancelEventPick}>やめる</button>
+      </div></div>);
+    return(<div style={st.wrap}><style>{CSS}</style>
+      <div className="fadein" style={{padding:16,minHeight:"100dvh",display:"flex",flexDirection:"column"}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:6}}>❓ イベント</div>
+        <div style={{...st.suzuBox,marginBottom:10}}>🐑 すず「{gs.suzuMsg}」</div>
+        <div style={{background:P.panelBg,border:`1px solid ${P.accent2}`,borderRadius:10,padding:12,marginBottom:14,display:"flex",flexDirection:"column",gap:10}}>
+          {ev.lines.map((l,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+            <div style={{fontSize:26,flexShrink:0}}>{l.ch}</div>
+            <div><div style={{fontSize:11,color:P.gold,marginBottom:2}}>{l.nm}</div><div style={{fontSize:14,lineHeight:1.6}}>{l.tx}</div></div>
+          </div>))}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {ev.choices.map((c,i)=>(
+            <button key={i} onClick={()=>chooseEvent(i)} style={{...st.btn(P.accent2),textAlign:"left",fontSize:14,padding:"12px 16px"}}>{c.t}</button>))}
+        </div>
       </div></div>);
   }
 
