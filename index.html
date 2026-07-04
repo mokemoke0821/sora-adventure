@@ -128,33 +128,47 @@ const EFF={
   emheal:s=>{s.run.hp=Math.min(s.run.hp+15,s.run.maxHp);addPop(s,"p","+15❤️","#66bb6a");},"emheal+":s=>{s.run.hp=Math.min(s.run.hp+22,s.run.maxHp);addPop(s,"p","+22❤️","#66bb6a");},
   ashstrike:s=>dmgE(s,s.ti,(s.battle.exhaustCount||0)*5),"ashstrike+":s=>dmgE(s,s.ti,(s.battle.exhaustCount||0)*7),
   recycle:s=>{if(s.battle.discardPile.length)s.recycle={n:1};},"recycle+":s=>{if(s.battle.discardPile.length)s.recycle={n:Math.min(2,s.battle.discardPile.length)};},
+  // ═══ 強化版（upId経由。allcutのみidを変えずenhancedフラグで分岐） ═══
+  "thunder+":s=>{const n=Math.random()<.5?2:1;for(let i=0;i<n;i++)dmgE(s,s.ti,18);},
+  "pierce+":s=>{const e=s.enemies[s.ti];if(e){let d=26+(s.run.str||0)+(hasR(s,"rusty")?2:0);if(s.run.weakened>0)d=Math.floor(d*.75);e.hp-=d;addPop(s,s.ti,`-${d}`,"#ffab40");}},
+  "reckless+":s=>{dmgE(s,s.ti,35);s.run.hp-=6;addPop(s,"p","-6","#ff8a65");},
+  "poison+":s=>{dmgE(s,s.ti,8);const e=s.enemies[s.ti];if(e)e.poison=(e.poison||0)+4;},
+  "barrier+":s=>{s.run.shield+=20;addPop(s,"p","+20🛡️","#4fc3f7");},
+  "counter+":s=>{s.run.shield+=7;s.run.counter=12;s.log.push("🔄 カウンター構え！（強化）");},
+  "fortress+":s=>{s.run.shield+=40;addPop(s,"p","+40🛡️","#4fc3f7");},
+  "thorns+":s=>{s.run.shield+=6;s.run.thorns=4;},
+  "drain+":s=>{dmgE(s,s.ti,14);s.run.hp=Math.min(s.run.hp+8,s.run.maxHp);addPop(s,"p","+8❤️","#66bb6a");},
+  "rage+":s=>{s.run.str+=3;addPop(s,"p","💪+3","#ffd54f");},
+  "accel+":s=>{s.battle.energy+=1;draw(s,2);},
+  "cleanse+":s=>{s.run.poison=0;s.run.burn=0;s.run.weakened=0;const ci=s.battle.hand.findIndex(c=>c.type==="curse");if(ci>=0)s.battle.hand.splice(ci,1);s.run.shield+=8;addPop(s,"p","✨浄化+🛡️8","#ba68c8");},
+  "scout+":s=>draw(s,3),
 };
 // rarity: c=common u=uncommon r=rare
 const CM={
   slash:{name:"斬撃",icon:"⚔️",cost:1,type:"attack",color:"#e74c3c",desc:"8ダメージ",up:"12ダメージ",upId:"slash+",r:"c"},
   combo:{name:"連撃",icon:"⚔️",cost:1,type:"attack",color:"#e74c3c",desc:"4ダメージ×3回",up:"4ダメージ×4回",upId:"combo+",r:"c"},
   fireball:{name:"火球",icon:"🔥",cost:2,type:"attack",color:"#e74c3c",desc:"16ダメージ+炎上2",up:"20ダメージ+炎上3",upId:"fireball+",r:"u"},
-  thunder:{name:"雷撃",icon:"⚡",cost:2,type:"attack",color:"#e74c3c",desc:"14ダメージ×1〜2回",r:"u"},
-  pierce:{name:"貫通撃",icon:"🗡️",cost:2,type:"attack",color:"#e74c3c",desc:"シールド無視20ダメージ",r:"u"},
-  reckless:{name:"捨て身",icon:"💀",cost:2,type:"attack",color:"#e74c3c",desc:"30ダメージ 自傷8",r:"u"},
-  poison:{name:"毒霧",icon:"☠️",cost:1,type:"attack",color:"#9ccc65",desc:"6ダメージ+毒3",r:"c"},
+  thunder:{name:"雷撃",icon:"⚡",cost:2,type:"attack",color:"#e74c3c",desc:"14ダメージ×1〜2回",up:"18ダメージ×1〜2回",upId:"thunder+",r:"u"},
+  pierce:{name:"貫通撃",icon:"🗡️",cost:2,type:"attack",color:"#e74c3c",desc:"シールド無視20ダメージ",up:"シールド無視26ダメージ",upId:"pierce+",r:"u"},
+  reckless:{name:"捨て身",icon:"💀",cost:2,type:"attack",color:"#e74c3c",desc:"30ダメージ 自傷8",up:"35ダメージ 自傷6",upId:"reckless+",r:"u"},
+  poison:{name:"毒霧",icon:"☠️",cost:1,type:"attack",color:"#9ccc65",desc:"6ダメージ+毒3",up:"8ダメージ+毒4",upId:"poison+",r:"c"},
   blast:{name:"爆裂火薬",icon:"🧨",cost:2,type:"attack",color:"#e74c3c",desc:"25ダメージ 使用後廃棄",up:"32ダメージ 使用後廃棄",upId:"blast+",r:"u",exhaust:true},
   ashstrike:{name:"灰の一撃",icon:"🔥",cost:1,type:"attack",color:"#e74c3c",desc:"廃棄枚数×5ダメージ",up:"廃棄枚数×7ダメージ",upId:"ashstrike+",r:"r"},
   backwater:{name:"背水の陣",icon:"🩸",cost:1,type:"skill",color:"#2ecc71",desc:"筋力+3 使用後廃棄",up:"筋力+4 使用後廃棄",upId:"backwater+",r:"u",exhaust:true},
   emheal:{name:"緊急治療",icon:"🚑",cost:1,type:"skill",color:"#2ecc71",desc:"HP15回復 使用後廃棄",up:"HP22回復 使用後廃棄",upId:"emheal+",r:"c",exhaust:true},
   recycle:{name:"リサイクル",icon:"♻️",cost:1,type:"skill",color:"#2ecc71",desc:"捨て札1枚を手札へ",up:"捨て札2枚を手札へ",upId:"recycle+",r:"u"},
-  allcut:{name:"全力斬り",icon:"🌟",cost:99,type:"attack",color:"#f1c40f",desc:"手札の枚数×12ダメージ",r:"r"},
+  allcut:{name:"全力斬り",icon:"🌟",cost:99,type:"attack",color:"#f1c40f",desc:"手札の枚数×12ダメージ",up:"手札の枚数×15ダメージ",upId:"allcut",r:"r"},
   wall:{name:"防壁",icon:"🛡️",cost:1,type:"defend",color:"#3498db",desc:"シールド8",up:"シールド12",upId:"wall+",r:"c"},
-  barrier:{name:"結界",icon:"🛡️",cost:2,type:"defend",color:"#3498db",desc:"シールド16",r:"c"},
-  counter:{name:"カウンター",icon:"🔄",cost:1,type:"defend",color:"#3498db",desc:"シールド5+反撃8",r:"u"},
-  fortress:{name:"鉄壁",icon:"🏰",cost:3,type:"defend",color:"#3498db",desc:"シールド30",r:"r"},
-  thorns:{name:"棘の鎧",icon:"🦔",cost:1,type:"defend",color:"#3498db",desc:"シールド4+反射3(3ターン)",r:"u"},
+  barrier:{name:"結界",icon:"🛡️",cost:2,type:"defend",color:"#3498db",desc:"シールド16",up:"シールド20",upId:"barrier+",r:"c"},
+  counter:{name:"カウンター",icon:"🔄",cost:1,type:"defend",color:"#3498db",desc:"シールド5+反撃8",up:"シールド7+反撃12",upId:"counter+",r:"u"},
+  fortress:{name:"鉄壁",icon:"🏰",cost:3,type:"defend",color:"#3498db",desc:"シールド30",up:"シールド40",upId:"fortress+",r:"r"},
+  thorns:{name:"棘の鎧",icon:"🦔",cost:1,type:"defend",color:"#3498db",desc:"シールド4+反射3(3ターン)",up:"シールド6+反射4(4ターン)",upId:"thorns+",r:"u"},
   heal:{name:"回復",icon:"💚",cost:2,type:"skill",color:"#2ecc71",desc:"HP12回復",up:"HP18回復",upId:"heal+",r:"c"},
-  drain:{name:"吸収",icon:"💜",cost:2,type:"skill",color:"#2ecc71",desc:"10ダメージ+HP6回復",r:"u"},
-  rage:{name:"憤怒",icon:"💪",cost:1,type:"skill",color:"#2ecc71",desc:"筋力+2(永続)",r:"u"},
-  accel:{name:"加速",icon:"⚡",cost:1,type:"skill",color:"#2ecc71",desc:"1枚引く+⚡1",r:"u"},
-  cleanse:{name:"浄化",icon:"✨",cost:1,type:"skill",color:"#2ecc71",desc:"毒・炎上・筋力低下を解除+呪い1枚除去",r:"u"},
-  scout:{name:"偵察",icon:"🔍",cost:1,type:"skill",color:"#2ecc71",desc:"カードを2枚引く",r:"c"},
+  drain:{name:"吸収",icon:"💜",cost:2,type:"skill",color:"#2ecc71",desc:"10ダメージ+HP6回復",up:"14ダメージ+HP8回復",upId:"drain+",r:"u"},
+  rage:{name:"憤怒",icon:"💪",cost:1,type:"skill",color:"#2ecc71",desc:"筋力+2(永続)",up:"筋力+3(永続)",upId:"rage+",r:"u"},
+  accel:{name:"加速",icon:"⚡",cost:1,type:"skill",color:"#2ecc71",desc:"1枚引く+⚡1",up:"2枚引く+⚡1",upId:"accel+",r:"u"},
+  cleanse:{name:"浄化",icon:"✨",cost:1,type:"skill",color:"#2ecc71",desc:"毒・炎上・筋力低下を解除+呪い1枚除去",up:"毒・炎上・筋力低下を解除+呪い1枚除去+シールド8",upId:"cleanse+",r:"u"},
+  scout:{name:"偵察",icon:"🔍",cost:1,type:"skill",color:"#2ecc71",desc:"カードを2枚引く",up:"カードを3枚引く",upId:"scout+",r:"c"},
   fatigue:{name:"疲労",icon:"💀",cost:99,type:"curse",color:"#666",desc:"使えないゴミ札",r:"x"},
   pain:{name:"痛み",icon:"💀",cost:99,type:"curse",color:"#666",desc:"毎ターン2ダメージ",r:"x"},
 };
@@ -648,7 +662,7 @@ function SoraAdventure(){
     if(card.type==="attack")s.battle.atkN=(s.battle.atkN||0)+1;
     if(card.type==="defend")s.battle.defN=(s.battle.defN||0)+1;
     sfx(card.type==="attack"?"atk":card.type==="defend"?"def":"heal");
-    if(card.id==="allcut"){const n=s.battle.hand.length+1;dmgE(s,s.ti,n*12);s.battle.discardPile.push(...s.battle.hand.splice(0));}
+    if(card.id==="allcut"){const n=s.battle.hand.length+1;dmgE(s,s.ti,n*(card.enhanced?15:12));s.battle.discardPile.push(...s.battle.hand.splice(0));}
     else{const f=EFF[card.id];if(f)f(s);}
     if(card.type==="attack"&&tgt&&tgt.hp>0&&tgt.counterStance>0){
       dmgP(s,tgt.counterStance);sfx("hit");
