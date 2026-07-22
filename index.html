@@ -21,7 +21,7 @@
 const { useState, useCallback, useRef } = React;
 
 /* ═══════════════════════════════════════════
-   ソラの大冒険 — v2.5 バランス調整（さくや再戦修正・てんぷら弱体化）版
+   ソラの大冒険 — v2.6 バランス調整（弱カードバフ・S3雑魚強化）版
    用語日本語化/チュートリアル/あそびかたヘルプ
    全3ステージ+ろい3フェーズ+エンディング
    レリック/ポーション/演出/効果音
@@ -121,13 +121,13 @@ const EFF={
   poison:s=>{dmgE(s,s.ti,6);const e=s.enemies[s.ti];if(e)e.poison=(e.poison||0)+3;},
   thunder:s=>{const n=Math.random()<.5?2:1;for(let i=0;i<n;i++)dmgE(s,s.ti,14);},
   wall:s=>{s.run.shield+=8;addPop(s,"p","+8🛡️","#4fc3f7");},"wall+":s=>{s.run.shield+=12;addPop(s,"p","+12🛡️","#4fc3f7");},
-  barrier:s=>{s.run.shield+=16;addPop(s,"p","+16🛡️","#4fc3f7");},
+  barrier:s=>{s.run.shield+=18;addPop(s,"p","+18🛡️","#4fc3f7");},
   counter:s=>{s.run.shield+=5;s.run.counter=8;s.log.push("🔄 カウンター構え！");},
   fortress:s=>{s.run.shield+=30;addPop(s,"p","+30🛡️","#4fc3f7");},
-  thorns:s=>{s.run.shield+=4;s.run.thorns=3;},
+  thorns:s=>{s.run.shield+=6;s.run.thorns=3;},
   heal:s=>{s.run.hp=Math.min(s.run.hp+12,s.run.maxHp);addPop(s,"p","+12❤️","#66bb6a");},
   "heal+":s=>{s.run.hp=Math.min(s.run.hp+18,s.run.maxHp);addPop(s,"p","+18❤️","#66bb6a");},
-  drain:s=>{dmgE(s,s.ti,10);s.run.hp=Math.min(s.run.hp+6,s.run.maxHp);addPop(s,"p","+6❤️","#66bb6a");},
+  drain:s=>{dmgE(s,s.ti,12);s.run.hp=Math.min(s.run.hp+8,s.run.maxHp);addPop(s,"p","+8❤️","#66bb6a");},
   rage:s=>{s.run.str+=2;addPop(s,"p","💪+2","#ffd54f");},
   accel:s=>{s.battle.energy+=1;draw(s,1);},
   cleanse:s=>{s.run.poison=0;s.run.burn=0;s.run.weakened=0;const ci=s.battle.hand.findIndex(c=>c.type==="curse");if(ci>=0)s.battle.hand.splice(ci,1);addPop(s,"p","✨浄化","#ba68c8");},
@@ -142,11 +142,11 @@ const EFF={
   "pierce+":s=>{const e=s.enemies[s.ti];if(e){let d=26+(s.run.str||0)+(hasR(s,"rusty")?2:0);if(s.run.weakened>0)d=Math.floor(d*.75);e.hp-=d;addPop(s,s.ti,`-${d}`,"#ffab40");}},
   "reckless+":s=>{dmgE(s,s.ti,35);s.run.hp-=6;addPop(s,"p","-6","#ff8a65");},
   "poison+":s=>{dmgE(s,s.ti,8);const e=s.enemies[s.ti];if(e)e.poison=(e.poison||0)+4;},
-  "barrier+":s=>{s.run.shield+=20;addPop(s,"p","+20🛡️","#4fc3f7");},
+  "barrier+":s=>{s.run.shield+=24;addPop(s,"p","+24🛡️","#4fc3f7");},
   "counter+":s=>{s.run.shield+=7;s.run.counter=12;s.log.push("🔄 カウンター構え！（強化）");},
   "fortress+":s=>{s.run.shield+=40;addPop(s,"p","+40🛡️","#4fc3f7");},
-  "thorns+":s=>{s.run.shield+=6;s.run.thorns=4;},
-  "drain+":s=>{dmgE(s,s.ti,14);s.run.hp=Math.min(s.run.hp+8,s.run.maxHp);addPop(s,"p","+8❤️","#66bb6a");},
+  "thorns+":s=>{s.run.shield+=8;s.run.thorns=5;},
+  "drain+":s=>{dmgE(s,s.ti,16);s.run.hp=Math.min(s.run.hp+10,s.run.maxHp);addPop(s,"p","+10❤️","#66bb6a");},
   "rage+":s=>{s.run.str+=3;addPop(s,"p","💪+3","#ffd54f");},
   "accel+":s=>{s.battle.energy+=1;draw(s,2);},
   "cleanse+":s=>{s.run.poison=0;s.run.burn=0;s.run.weakened=0;const ci=s.battle.hand.findIndex(c=>c.type==="curse");if(ci>=0)s.battle.hand.splice(ci,1);s.run.shield+=8;addPop(s,"p","✨浄化+🛡️8","#ba68c8");},
@@ -168,12 +168,12 @@ const CM={
   recycle:{name:"リサイクル",icon:"♻️",cost:1,type:"skill",color:"#2ecc71",desc:"捨て札1枚を手札へ",up:"捨て札2枚を手札へ",upId:"recycle+",r:"u"},
   allcut:{name:"全力斬り",icon:"🌟",cost:99,type:"attack",color:"#f1c40f",desc:"手札の枚数×12ダメージ",up:"手札の枚数×15ダメージ",upId:"allcut",r:"r"},
   wall:{name:"防壁",icon:"🛡️",cost:1,type:"defend",color:"#3498db",desc:"シールド8",up:"シールド12",upId:"wall+",r:"c"},
-  barrier:{name:"結界",icon:"🛡️",cost:2,type:"defend",color:"#3498db",desc:"シールド16",up:"シールド20",upId:"barrier+",r:"c"},
+  barrier:{name:"結界",icon:"🛡️",cost:2,type:"defend",color:"#3498db",desc:"シールド18",up:"シールド24",upId:"barrier+",r:"c"},
   counter:{name:"カウンター",icon:"🔄",cost:1,type:"defend",color:"#3498db",desc:"シールド5+反撃8",up:"シールド7+反撃12",upId:"counter+",r:"u"},
   fortress:{name:"鉄壁",icon:"🏰",cost:3,type:"defend",color:"#3498db",desc:"シールド30",up:"シールド40",upId:"fortress+",r:"r"},
-  thorns:{name:"棘の鎧",icon:"🦔",cost:1,type:"defend",color:"#3498db",desc:"シールド4+反射3(3ターン)",up:"シールド6+反射4(4ターン)",upId:"thorns+",r:"u"},
+  thorns:{name:"棘の鎧",icon:"🦔",cost:1,type:"defend",color:"#3498db",desc:"シールド6+反射3(3ターン)",up:"シールド8+反射5(5ターン)",upId:"thorns+",r:"u"},
   heal:{name:"回復",icon:"💚",cost:2,type:"skill",color:"#2ecc71",desc:"HP12回復",up:"HP18回復",upId:"heal+",r:"c"},
-  drain:{name:"吸収",icon:"💜",cost:2,type:"skill",color:"#2ecc71",desc:"10ダメージ+HP6回復",up:"14ダメージ+HP8回復",upId:"drain+",r:"u"},
+  drain:{name:"吸収",icon:"💜",cost:2,type:"skill",color:"#2ecc71",desc:"12ダメージ+HP8回復",up:"16ダメージ+HP10回復",upId:"drain+",r:"u"},
   rage:{name:"憤怒",icon:"💪",cost:1,type:"skill",color:"#2ecc71",desc:"筋力+2(永続)",up:"筋力+3(永続)",upId:"rage+",r:"u"},
   accel:{name:"加速",icon:"⚡",cost:1,type:"skill",color:"#2ecc71",desc:"1枚引く+⚡1",up:"2枚引く+⚡1",upId:"accel+",r:"u"},
   cleanse:{name:"浄化",icon:"✨",cost:1,type:"skill",color:"#2ecc71",desc:"毒・炎上・筋力低下を解除+呪い1枚除去",up:"毒・炎上・筋力低下を解除+呪い1枚除去+シールド8",upId:"cleanse+",r:"u"},
@@ -281,12 +281,12 @@ const EN={
     lines:["おい！ 何だお前！ 勇者？ ふざけんな！"],phase2lines:["もういい、全力だ！ あっつ！ 俺のマントも燃えてる！"],
     cards:{ff:{name:"炎拳",dmg:12,burn:2},pillar:{name:"火柱",dmg:8,burn:3,selfBurn:1},armor:{name:"紅蓮の鎧",shield:16},repair:{name:"自己修復",heal:10,selfHealOnce:true},bf:{name:"灼熱拳",dmg:15,burn:2},meteor:{name:"メテオ",dmg:28,burn:3},awaken2:{name:"灼熱覚醒",selfStr:5,selfDmg:10}}},
   // ── S3 ──
-  mimic:{name:"ミミック",icon:"📦",hp:55,maxHp:55,
+  mimic:{name:"ミミック",icon:"📦",hp:62,maxHp:62,
     deck:["wait","chomp","chomp","swallow","chomp"],lines:["宝箱だよ〜 開けてみて〜 ...ガブッ"],
-    cards:{wait:{name:"待機(宝箱のふり)",nothing:true},chomp:{name:"噛みつき",dmg:16},swallow:{name:"丸呑み",dmg:26}}},
-  fallen:{name:"堕天使",icon:"👼",hp:42,maxHp:42,
+    cards:{wait:{name:"待機(宝箱のふり)",nothing:true},chomp:{name:"噛みつき",dmg:18},swallow:{name:"丸呑み",dmg:26}}},
+  fallen:{name:"堕天使",icon:"👼",hp:50,maxHp:50,
     deck:["dark","pray","wing","dark","pray"],lines:["光あれ！ ...あれ、闇が出た。まあいいか"],
-    cards:{dark:{name:"闇の光",dmg:11},pray:{name:"祈り",heal:9},wing:{name:"堕落の翼",dmg:13,shield:5}}},
+    cards:{dark:{name:"闇の光",dmg:14},pray:{name:"祈り",heal:10},wing:{name:"堕落の翼",dmg:13,shield:5}}},
   ryusei:{name:"親衛隊長りゅうせい",icon:"🦇",hp:160,maxHp:160,elite:true,
     deck:["blade","cstance","wave","blade","cstance","sentence","blade","dheal","cstance"],
     lines:["...また勇者か。何人目だよ...仕事だからやるけど"],
@@ -1047,7 +1047,7 @@ function SoraAdventure(){
         <button style={{...st.btn(P.accent2),fontSize:13,padding:"8px 24px"}} onClick={()=>upd(s=>{s.showHelp=true;})}>❓ あそびかた</button>
         <div style={{color:P.dim,fontSize:10}}>📱 冒険の途中経過と周回記録はこの端末に自動保存されます</div>
         <div style={{color:P.dim,fontSize:11}}>通算{gs.meta.totalRuns}周 | 最高: ステージ{gs.meta.bestStage||"—"} | クリア{gs.meta.clears}回</div>
-        <div style={{color:P.dim,fontSize:9}}>v2.5</div>
+        <div style={{color:P.dim,fontSize:9}}>v2.6</div>
         {gs.meta.totalRuns>0&&gs.meta.clears===0&&<div style={{fontSize:11,color:P.gold}}>🗡️ 2周目以降:「錆びた剣」でスタート</div>}
         {gs.meta.clears>0&&<div style={{fontSize:11,color:P.gold}}>🖤 クリア特典:「虚無の心臓」装備</div>}
       </div></div>);
