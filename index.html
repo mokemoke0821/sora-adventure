@@ -21,7 +21,7 @@
 const { useState, useCallback, useRef } = React;
 
 /* ═══════════════════════════════════════════
-   ソラの大冒険 — v2.3 バランス整合+セーブ版
+   ソラの大冒険 — v2.4 ラン途中セーブ（つづきから）版
    用語日本語化/チュートリアル/あそびかたヘルプ
    全3ステージ+ろい3フェーズ+エンディング
    レリック/ポーション/演出/効果音
@@ -33,8 +33,17 @@ function uid(){return Math.random().toString(36).slice(2,9);}
 const _mem={};
 const store={
   get(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):_mem[k]??null;}catch(e){return _mem[k]??null;}},
-  set(k,v){_mem[k]=v;try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+  set(k,v){_mem[k]=v;try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}},
+  del(k){delete _mem[k];try{localStorage.removeItem(k);}catch(e){}}
 };
+
+// ═══ ラン途中セーブ（v2.4） ═══
+// sora:meta（通算記録）とは分離。形式: {v:1, savedAt, run, resume:{kind:"map"|"battle"|"stageBonus", eid?, stageBonus?}}
+const RUN_SAVE_KEY="sora:run";
+const RUN_SAVE_V=1;
+function saveRun(s,resume){if(!s.run)return;store.set(RUN_SAVE_KEY,{v:RUN_SAVE_V,savedAt:Date.now(),run:s.run,resume:resume||{kind:"map"}});}
+function loadRun(){const sv=store.get(RUN_SAVE_KEY);return(sv&&sv.v===RUN_SAVE_V&&sv.run)?sv:null;}  // v不一致は黙って新規扱い
+function clearRun(){store.del(RUN_SAVE_KEY);}
 
 // ═══ 効果音（WebAudio合成） ═══
 let AC=null;
@@ -536,7 +545,19 @@ function SoraAdventure(){
   const[tick,setTick]=useState(0);const gs=gsRef.current;
   const rr=useCallback(()=>setTick(t=>t+1),[]);
   gs._rr=rr;
-  const upd=useCallback(fn=>{fn(gsRef.current);store.set("sora:meta",gsRef.current.meta);rr();},[rr]);
+  const upd=useCallback(fn=>{
+    fn(gsRef.current);store.set("sora:meta",gsRef.current.meta);
+    // オートセーブ: 安全画面（マップ/ステージボーナス）に入るたび全量上書き。バトル中は保存しない（開始時スナップショットのみ）
+    const s=gsRef.current;
+    if(s.run){
+      if(s.screen==="map")saveRun(s,{kind:"map"});
+      else if(s.screen==="stageBonus"&&s.stageBonus)saveRun(s,{kind:"stageBonus",stageBonus:s.stageBonus});
+      else if(s.screen==="reward"&&s.reward)saveRun(s,{kind:"reward",reward:s.reward});  // 勝利報酬画面で中断→報酬から再開（再戦不要）
+      else if(s.screen==="shop")saveRun(s,{kind:"map"});  // ショップ購入を即時保存（中断しても購入が消えない。再開はマップから）
+    }
+    if(s.screen==="gameOver"||s.screen==="ending")clearRun();  // Run終了（勝敗どちらも）でセーブ削除
+    rr();
+  },[rr]);
 
   function makeE(eid){const t=EN[eid];if(!t)return null;
     return{id:eid,name:t.name,icon:t.icon,hp:t.hp,maxHp:t.maxHp,shield:0,deckIdx:0,phase:1,poison:0,burn:0,str:0,intent:null,counterStance:0,summoned:t.summoned||false,doom:0,doubleNext:false};}
@@ -547,6 +568,7 @@ function SoraAdventure(){
 
   function initBattle(s,eid){
     const t=EN[eid];if(!t)return;
+    saveRun(s,{kind:"battle",eid});  // バトル前スナップショット: バトル中に終了してもこのバトル開始時点から再開
     s.screen="battle";
     s.battle={hand:[],drawPile:shuffle(s.run.deck),discardPile:[],exhaustPile:[],energy:s.run.maxEnergy,turn:1,atkN:0,defN:0,eHinted:false,exhaustCount:0};
     s.enemies=[makeE(eid)];s.ti=0;s.recycle=null;
@@ -573,6 +595,7 @@ function SoraAdventure(){
 
   const startRun=()=>upd(s=>{
     sfx("click");
+    clearRun();  // 新規Run開始時は途中セーブを破棄（goliathDefeatedは下の新規run生成でリセット＝既知ルール維持）
     s.screen="map";s.meta.totalRuns++;
     const relics=[];let maxHp=80,maxEnergy=3;
     if(s.meta.totalRuns>1)relics.push(mr("rusty"));
@@ -586,6 +609,25 @@ function SoraAdventure(){
     // ステージ開始ボーナス（S1開幕含む全3回・スレスパNeow式）
     s.stageBonus=makeStageBonus(s);s.screen="stageBonus";s.suzuMsg=suzu("bonus");
   });
+
+  // ═══ つづきから（v2.4） ═══
+  const resumeRun=()=>upd(s=>{
+    const sv=loadRun();if(!sv)return;
+    sfx("click");
+    s.run=sv.run;
+    s.enemies=[];s.log=[];s.reward=null;s.hint=null;s.mokeMsg="";s.roiMsg="";s.gomiMsg="";
+    s.skit=null;s.skitIdx=0;s.skitEid=null;s.stageBonus=null;s.pops=[];s.showDeck=false;
+    const r=sv.resume||{kind:"map"};
+    if(r.kind==="battle"&&r.eid&&EN[r.eid]){initBattle(s,r.eid);}          // そのバトルの開始時点から再開
+    else if(r.kind==="stageBonus"&&r.stageBonus){s.stageBonus=r.stageBonus;s.screen="stageBonus";s.suzuMsg=suzu("bonus");}
+    else if(r.kind==="reward"&&r.reward){s.reward=r.reward;s.screen="reward";s.suzuMsg=suzu("bossWin");}  // 報酬選択から再開
+    else{s.screen="map";s.suzuMsg=suzu("mapStart");}
+  });
+  // タイトル「はじめから」: 既存ランがある場合のみ確認（つづきからを誤って潰さないため）
+  const newRunFromTitle=()=>{
+    if(loadRun()&&!window.confirm("記録は残ります。冒険をやり直しますか？"))return;
+    startRun();
+  };
 
   const selectNode=node=>upd(s=>{
     sfx("click");
@@ -989,10 +1031,16 @@ function SoraAdventure(){
         <div style={{fontSize:38,fontWeight:900,background:`linear-gradient(135deg,${P.accent},${P.gold})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",textAlign:"center"}}>ソラの大冒険</div>
         <div style={{fontSize:48}}>🤓⚔️👿</div>
         <div style={{color:P.dim,textAlign:"center",fontSize:13,lineHeight:1.8,maxWidth:300}}>💤 もけもけ：「やあ。僕はもけもけ。この冒険の語り部...というか、見てるだけの人」</div>
-        <button style={st.btn()} onClick={startRun}>冒険を始める</button>
+        {loadRun()?(<React.Fragment>
+          <button style={st.btn()} onClick={resumeRun}>▶️ つづきから</button>
+          <button style={{...st.btn(P.accent2),fontSize:13,padding:"8px 24px"}} onClick={newRunFromTitle}>はじめから</button>
+        </React.Fragment>):(
+          <button style={st.btn()} onClick={startRun}>冒険を始める</button>
+        )}
         <button style={{...st.btn(P.accent2),fontSize:13,padding:"8px 24px"}} onClick={()=>upd(s=>{s.showHelp=true;})}>❓ あそびかた</button>
-        <div style={{color:P.dim,fontSize:10}}>📱 周回記録はこの端末に自動保存されます</div>
+        <div style={{color:P.dim,fontSize:10}}>📱 冒険の途中経過と周回記録はこの端末に自動保存されます</div>
         <div style={{color:P.dim,fontSize:11}}>通算{gs.meta.totalRuns}周 | 最高: ステージ{gs.meta.bestStage||"—"} | クリア{gs.meta.clears}回</div>
+        <div style={{color:P.dim,fontSize:9}}>v2.4</div>
         {gs.meta.totalRuns>0&&gs.meta.clears===0&&<div style={{fontSize:11,color:P.gold}}>🗡️ 2周目以降:「錆びた剣」でスタート</div>}
         {gs.meta.clears>0&&<div style={{fontSize:11,color:P.gold}}>🖤 クリア特典:「虚無の心臓」装備</div>}
       </div></div>);
