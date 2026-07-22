@@ -21,7 +21,7 @@
 const { useState, useCallback, useRef } = React;
 
 /* ═══════════════════════════════════════════
-   ソラの大冒険 — v2.6 バランス調整（弱カードバフ・S3雑魚強化）版
+   ソラの大冒険 — v2.7 新カード（必殺・集中）追加版
    用語日本語化/チュートリアル/あそびかたヘルプ
    全3ステージ+ろい3フェーズ+エンディング
    レリック/ポーション/演出/効果音
@@ -151,6 +151,11 @@ const EFF={
   "accel+":s=>{s.battle.energy+=1;draw(s,2);},
   "cleanse+":s=>{s.run.poison=0;s.run.burn=0;s.run.weakened=0;const ci=s.battle.hand.findIndex(c=>c.type==="curse");if(ci>=0)s.battle.hand.splice(ci,1);s.run.shield+=8;addPop(s,"p","✨浄化+🛡️8","#ba68c8");},
   "scout+":s=>draw(s,3),
+  // ═══ v2.7新カード ═══
+  hissatsu:s=>{const hit=Math.random()<.5;dmgE(s,s.ti,hit?45:15);s.log.push(hit?"💥 必殺が決まった！！":"💥 …必殺は浅かった");},
+  "hissatsu+":s=>{const hit=Math.random()<.6;dmgE(s,s.ti,hit?50:18);s.log.push(hit?"💥 必殺が決まった！！":"💥 …必殺は浅かった");},
+  shuchu:s=>{const n=s.battle.hand.length;s.battle.discardPile.push(...s.battle.hand.splice(0));draw(s,n+1);s.log.push(`🧘 集中: ${n}枚捨てて${n+1}枚引いた`);},
+  "shuchu+":s=>{const n=s.battle.hand.length;s.battle.discardPile.push(...s.battle.hand.splice(0));draw(s,n+2);s.log.push(`🧘 集中: ${n}枚捨てて${n+2}枚引いた`);},
 };
 // rarity: c=common u=uncommon r=rare
 const CM={
@@ -178,6 +183,8 @@ const CM={
   accel:{name:"加速",icon:"⚡",cost:1,type:"skill",color:"#2ecc71",desc:"1枚引く+⚡1",up:"2枚引く+⚡1",upId:"accel+",r:"u"},
   cleanse:{name:"浄化",icon:"✨",cost:1,type:"skill",color:"#2ecc71",desc:"毒・炎上・筋力低下を解除+呪い1枚除去",up:"毒・炎上・筋力低下を解除+呪い1枚除去+シールド8",upId:"cleanse+",r:"u"},
   scout:{name:"偵察",icon:"🔍",cost:1,type:"skill",color:"#2ecc71",desc:"カードを2枚引く",up:"カードを3枚引く",upId:"scout+",r:"c"},
+  hissatsu:{name:"必殺",icon:"💥",cost:3,type:"attack",color:"#f1c40f",desc:"50%で45ダメージ/はずれ15",up:"60%で50ダメージ/はずれ18",upId:"hissatsu+",r:"r",rewardOnly:true},
+  shuchu:{name:"集中",icon:"🧘",cost:0,type:"skill",color:"#2ecc71",desc:"手札を全て捨て+1枚多く引く",up:"手札を全て捨て+2枚多く引く",upId:"shuchu+",r:"c",rewardOnly:true},
   fatigue:{name:"疲労",icon:"💀",cost:99,type:"curse",color:"#666",desc:"使えないゴミ札",r:"x"},
   pain:{name:"痛み",icon:"💀",cost:99,type:"curse",color:"#666",desc:"毎ターン2ダメージ",r:"x"},
 };
@@ -360,7 +367,7 @@ function applyEventPick(s){
     s.log=[`🔥 ${c.name} を燃やした（デッキから廃棄）。HP10回復${extra}`];
   }else if(ep.mode==="give"){
     const c=s.run.deck[ep.chosen[0]];if(!c)return;const rank={c:0,u:1,r:2};
-    const pool=Object.keys(CM).filter(k=>CM[k].r!=="x"&&(rank[CM[k].r]??0)>=(rank[c.r]??0));
+    const pool=Object.keys(CM).filter(k=>CM[k].r!=="x"&&!CM[k].rewardOnly&&(rank[CM[k].r]??0)>=(rank[c.r]??0));
     const nc=mc(pick(pool));s.run.deck.splice(ep.chosen[0],1);s.run.deck.push(nc);
     s.log=[`🐴 ${c.name} を差し出し、${nc.name} を受け取った`];
   }else if(ep.mode==="melt2"){
@@ -396,7 +403,7 @@ const EVENTS={
       {t:"[B] 全額賭ける（40%で2.5倍）",run:s=>{const bet=s.run.gold;if(Math.random()<.4){const win=Math.floor(bet*1.5);s.run.gold+=win;s.log=[`🎲 大勝利！ +${win}G`];}else{s.run.gold=0;s.log=["🎲 全額没収…"];}}},
       {t:"[C] 帰る",run:s=>{s.log=["🎲 ディーラー「賢明だ」"];}}]},
   library:{name:"禁断の書庫",S:[3],lines:[{ch:"🤓",nm:"ソラ",tx:"読むなって書いてある本ほど読みたくなる…"},{ch:"🐑",nm:"すず",tx:"それ人間の悪いところよ♡ わたしは読んだけど♡"}],
-    choices:[{t:"[A] 読む（🟡カード+呪い）",run:s=>{const rares=Object.keys(CM).filter(k=>CM[k].r==="r");const rc=mc(pick(rares));s.run.deck.push(rc);const cu=mc("pain");s.run.deck.push(cu);s.log=[`📖 禁断の知識！ ${rc.name}(🟡)入手…だが呪い「${cu.name}」も混入`];}},
+    choices:[{t:"[A] 読む（🟡カード+呪い）",run:s=>{const rares=Object.keys(CM).filter(k=>CM[k].r==="r"&&!CM[k].rewardOnly);const rc=mc(pick(rares));s.run.deck.push(rc);const cu=mc("pain");s.run.deck.push(cu);s.log=[`📖 禁断の知識！ ${rc.name}(🟡)入手…だが呪い「${cu.name}」も混入`];}},
       {t:"[B] 表紙だけ見る（次ショップ1枚半額）",run:s=>{s.run.nextShopDiscount=true;s.log=["📖 カード知識を得た。次のショップで1枚半額"];}},
       {t:"[C] 閉じる",run:s=>{s.log=["📖 そっと閉じた"];}}]},
   bonfire:{name:"焚き火",S:[1,2,3],lines:[{ch:"🤓",nm:"ソラ",tx:"焚き火だ…なんか、いらないものを燃やしたくなりますね"},{ch:"💤",nm:"もけもけ",tx:"わかるよ。過去とかね。…カードでいいんじゃない?"}],
@@ -642,7 +649,7 @@ function SoraAdventure(){
     else if(node.type==="rest"){s.restChoice=null;s.screen="rest";s.suzuMsg=suzu("rest");}
     else if(node.type==="swap"){s.swapChoice=null;s.screen="swap";s.suzuMsg=suzu("event");}
     else if(node.type==="shop"){
-      const pool=Object.keys(CM).filter(k=>CM[k].r!=="x");
+      const pool=Object.keys(CM).filter(k=>CM[k].r!=="x"&&!CM[k].rewardOnly);
       s.shopCards=shuffle(pool).slice(0,4).map(id=>({card:mc(id),price:CM[id].r==="r"?70:CM[id].r==="u"?50:35}));
       if(s.run.nextShopDiscount&&s.shopCards.length){s.shopCards[0].price=Math.floor(s.shopCards[0].price/2);s.shopCards[0].half=true;s.run.nextShopDiscount=false;}
       s.shopPotions=shuffle(Object.keys(POTIONS)).slice(0,2).map(id=>({potion:mp(id),price:30}));
@@ -931,7 +938,7 @@ function SoraAdventure(){
     s.run.deck.splice(idx,1);s.log=[`♻️ すらいむ「${c.name}、確かに引き取った」（無料削除）`];
     s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");});
   const swapTrade=idx=>upd(s=>{const c=s.run.deck[idx];if(!c)return;sfx("click");
-    const same=Object.keys(CM).filter(k=>CM[k].r===c.r&&CM[k].r!=="x"&&k!==c.id);
+    const same=Object.keys(CM).filter(k=>CM[k].r===c.r&&CM[k].r!=="x"&&!CM[k].rewardOnly&&k!==c.id);
     if(!same.length){s.log=["♻️ すらいむ「同レアの在庫が切れてる…すまんな」"];s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");return;}
     const nc=mc(pick(same));s.run.deck[idx]=nc;
     s.log=[`♻️ ${c.name} ⇔ ${nc.name} と物々交換！`];s.run.row++;s.screen="map";s.suzuMsg=suzu("mapMove");});
@@ -1047,7 +1054,7 @@ function SoraAdventure(){
         <button style={{...st.btn(P.accent2),fontSize:13,padding:"8px 24px"}} onClick={()=>upd(s=>{s.showHelp=true;})}>❓ あそびかた</button>
         <div style={{color:P.dim,fontSize:10}}>📱 冒険の途中経過と周回記録はこの端末に自動保存されます</div>
         <div style={{color:P.dim,fontSize:11}}>通算{gs.meta.totalRuns}周 | 最高: ステージ{gs.meta.bestStage||"—"} | クリア{gs.meta.clears}回</div>
-        <div style={{color:P.dim,fontSize:9}}>v2.6</div>
+        <div style={{color:P.dim,fontSize:9}}>v2.7</div>
         {gs.meta.totalRuns>0&&gs.meta.clears===0&&<div style={{fontSize:11,color:P.gold}}>🗡️ 2周目以降:「錆びた剣」でスタート</div>}
         {gs.meta.clears>0&&<div style={{fontSize:11,color:P.gold}}>🖤 クリア特典:「虚無の心臓」装備</div>}
       </div></div>);
