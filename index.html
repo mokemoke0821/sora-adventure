@@ -21,7 +21,7 @@
 const { useState, useCallback, useRef } = React;
 
 /* ═══════════════════════════════════════════
-   ソラの大冒険 — v2.4 ラン途中セーブ（つづきから）版
+   ソラの大冒険 — v2.5 バランス調整（さくや再戦修正・てんぷら弱体化）版
    用語日本語化/チュートリアル/あそびかたヘルプ
    全3ステージ+ろい3フェーズ+エンディング
    レリック/ポーション/演出/効果音
@@ -275,11 +275,11 @@ const EN={
     deck:["fist","rally","punch","fist","press","stomp","fist","rally","punch"],
     lines:["ルールは簡単だ。俺が殴る。お前が倒れる。以上！"],
     cards:{fist:{name:"剛拳",dmg:14},rally:{name:"鼓舞",selfStr:3},punch:{name:"豪腕",dmg:40},press:{name:"ボディプレス",dmg:20,selfDmg:5},stomp:{name:"大地踏み",shield:6}}},
-  tempura:{name:"炎将てんぷら",icon:"🔥",hp:180,maxHp:180,boss:true,
+  tempura:{name:"炎将てんぷら",icon:"🔥",hp:150,maxHp:150,boss:true,
     phase1deck:["ff","ff","pillar","armor","ff","repair","pillar"],
     phase2deck:["bf","bf","meteor","awaken2","bf"],
     lines:["おい！ 何だお前！ 勇者？ ふざけんな！"],phase2lines:["もういい、全力だ！ あっつ！ 俺のマントも燃えてる！"],
-    cards:{ff:{name:"炎拳",dmg:12,burn:2},pillar:{name:"火柱",dmg:8,burn:3,selfBurn:1},armor:{name:"紅蓮の鎧",shield:16},repair:{name:"自己修復",heal:22,selfHealOnce:true},bf:{name:"灼熱拳",dmg:20,burn:3},meteor:{name:"メテオ",dmg:38,burn:4},awaken2:{name:"灼熱覚醒",selfStr:5,selfDmg:10}}},
+    cards:{ff:{name:"炎拳",dmg:12,burn:2},pillar:{name:"火柱",dmg:8,burn:3,selfBurn:1},armor:{name:"紅蓮の鎧",shield:16},repair:{name:"自己修復",heal:10,selfHealOnce:true},bf:{name:"灼熱拳",dmg:15,burn:2},meteor:{name:"メテオ",dmg:28,burn:3},awaken2:{name:"灼熱覚醒",selfStr:5,selfDmg:10}}},
   // ── S3 ──
   mimic:{name:"ミミック",icon:"📦",hp:55,maxHp:55,
     deck:["wait","chomp","chomp","swallow","chomp"],lines:["宝箱だよ〜 開けてみて〜 ...ガブッ"],
@@ -602,7 +602,7 @@ function SoraAdventure(){
     if(s.meta.clears>0){relics.push(mr("voidheart"));maxHp-=15;maxEnergy+=1;}
     s.run={stage:1,row:0,deck:initDeck(),relics,potions:[mp("healpot")],gold:50,hp:maxHp,maxHp,energy:maxEnergy,maxEnergy,
       str:0,shield:0,poison:0,burn:0,counter:0,thorns:0,weakened:0,energyDebt:0,map:genMap(1),
-      seenEvents:[],nextShopDiscount:false,nextBattleHandPenalty:0,forceBattleNext:false,pendingBattleBonus:0,roiGift:false,goliathDefeated:false,bossHintSeen:false,rarePity:0};
+      seenEvents:[],nextShopDiscount:false,nextBattleHandPenalty:0,forceBattleNext:false,pendingBattleBonus:0,roiGift:false,goliathDefeated:false,sakuyaDefeated:false,bossHintSeen:false,rarePity:0};
     s.enemies=[];s.log=[];s.suzuMsg=suzu("mapStart");s.mokeMsg="";s.gomiMsg="";
     if(!s.meta.rulesSeen){s.meta.rulesSeen=true;s.showHelp=true;s.helpIntro=true;}
     if(s.meta.totalRuns>1)s.log=["🗡️ 周回ボーナス:「錆びた剣」を装備して開始！"];
@@ -633,6 +633,8 @@ function SoraAdventure(){
     sfx("click");
     // 迷子の子スライム[A]: 次ノードを強制的に通常戦闘へ変化
     if(s.run.forceBattleNext&&node.type!=="boss"){s.run.forceBattleNext=false;node={type:"battle",enemyPool:SP[s.run.stage]};s.log=["🫧 親スライムが待ち構えていた！"];}
+    // さくや再戦ガード（二重ガード: 撃破時のノード変換 + 選択時フォールバック。旧セーブのmap等でエリートノードが残っていても発火しない）
+    if(node.type==="elite"&&node.id==="sakuya"&&s.run.sakuyaDefeated){node={type:"battle",enemyPool:SP[s.run.stage]};s.log=["⚔️ 番犬さくやは既に去った。代わりに魔物が現れた！"];}
     if(node.type==="battle"){initBattle(s,pick(node.enemyPool||["mushroom"]));s.suzuMsg=pick(["がんばって♡","女神が見守ってるわ♡","弱そうね♡ …たぶん♡"]);}
     else if(node.type==="elite"||node.type==="boss"){
       const eid=node.id;const t=EN[eid];if(!t){initBattle(s,eid);return;}
@@ -755,7 +757,7 @@ function SoraAdventure(){
       }else if(e.phase===1&&e.hp<=e.maxHp*.5){e.phase=2;e.deckIdx=0;e.str+=3;s.log.push(`⚠️ ${e.name}「${t.phase2lines?.[0]||"..."}」`);s.hint=GH.phase;sfx("phase");}
     });
     // てんぷらP2灼熱フィールド
-    s.enemies.forEach(e=>{if(e.hp>0&&e.id==="tempura"&&e.phase===2){dmgP(s,10);s.log.push("🔥 灼熱フィールド！ 10ダメージ！");}});
+    s.enemies.forEach(e=>{if(e.hp>0&&e.id==="tempura"&&e.phase===2){dmgP(s,6);s.log.push("🔥 灼熱フィールド！ 6ダメージ！");}});
     if(s.run.hp<=0){onLose(s);return;}
     draw(s,5+(hasR(s,"tome")?1:0));
     if(s.hint!==GH.phase&&s.hint!==GH.doom)s.hint=null;
@@ -842,6 +844,11 @@ function SoraAdventure(){
     if(beatRoi){s.meta.clears++;s.meta.bestStage=3;s.screen="ending";s.endIdx=0;return;}
     s.log.push("🎉 勝利！");s.suzuMsg=suzu("bossWin");
     const isBoss=s.enemies.some(e=>EN[e.id]?.boss);const isElite=s.enemies.some(e=>EN[e.id]?.elite);
+    // さくや撃破: 同一Run内の再戦防止（フラグ+残存エリートノードを通常戦闘へ変換=クリア済み扱い。報酬の無限稼ぎ対策）
+    if(s.enemies.some(e=>e.id==="sakuya")){
+      s.run.sakuyaDefeated=true;
+      s.run.map.forEach(row=>row.forEach((n,i)=>{if(n.type==="elite"&&n.id==="sakuya")row[i]={type:"battle",enemyPool:SP[1]};}));
+    }
     // ゴリアテ撃破: 正体の綻び演出（ピンクフラッシュ+撃破台詞、goliathDefeatedフラグ）
     if(s.enemies.some(e=>e.id==="goliath")){
       s.run.goliathDefeated=true;
@@ -1040,7 +1047,7 @@ function SoraAdventure(){
         <button style={{...st.btn(P.accent2),fontSize:13,padding:"8px 24px"}} onClick={()=>upd(s=>{s.showHelp=true;})}>❓ あそびかた</button>
         <div style={{color:P.dim,fontSize:10}}>📱 冒険の途中経過と周回記録はこの端末に自動保存されます</div>
         <div style={{color:P.dim,fontSize:11}}>通算{gs.meta.totalRuns}周 | 最高: ステージ{gs.meta.bestStage||"—"} | クリア{gs.meta.clears}回</div>
-        <div style={{color:P.dim,fontSize:9}}>v2.4</div>
+        <div style={{color:P.dim,fontSize:9}}>v2.5</div>
         {gs.meta.totalRuns>0&&gs.meta.clears===0&&<div style={{fontSize:11,color:P.gold}}>🗡️ 2周目以降:「錆びた剣」でスタート</div>}
         {gs.meta.clears>0&&<div style={{fontSize:11,color:P.gold}}>🖤 クリア特典:「虚無の心臓」装備</div>}
       </div></div>);
