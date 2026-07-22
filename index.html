@@ -21,7 +21,7 @@
 const { useState, useCallback, useRef } = React;
 
 /* ═══════════════════════════════════════════
-   ソラの大冒険 — v2.7 新カード（必殺・集中）追加版
+   ソラの大冒険 — v2.8 シナリオ改変（政策ネタ統合・タグ化講評・撃破台詞）版
    用語日本語化/チュートリアル/あそびかたヘルプ
    全3ステージ+ろい3フェーズ+エンディング
    レリック/ポーション/演出/効果音
@@ -261,12 +261,12 @@ const EN={
     cards:{splat:{name:"べちゃっ",dmg:11},guard:{name:"ぷるぷるガード",shield:10},split:{name:"分裂?",heal:20},acid:{name:"酸飛ばし",dmg:8,weaken:1}}},
   sakuya:{name:"番犬さくや",icon:"⚔️",hp:100,maxHp:100,elite:true,
     deck:["judge","stance","execute","stance","judge","mercy","stance","holy"],
-    lines:["...ご機嫌よう。通行許可証はお持ちですか？"],
+    lines:["...ご機嫌よう。通行許可証はお持ちですか？"],defeatLine:"見事です。...お怪我はありませんか。この先は、どうかお気をつけて",
     cards:{judge:{name:"裁きの剣",dmg:12},stance:{name:"構え",shield:10,counter:14},execute:{name:"断罪",dmg:22},mercy:{name:"慈悲の手当",heal:12},holy:{name:"聖裁",dmg:16,weaken:2}}},
   momo:{name:"毒舌の魔女もも",icon:"🖤",hp:140,maxHp:140,boss:true,
     phase1deck:["claw","fog","claw","pot","kiss","claw","elixir"],
     phase2deck:["fog2","claw2","convert","memfog","pot2","claw2","fog2","convert"],
-    lines:["あら...勇者さん？ ふーん...普通ね"],phase2lines:["ちょっと、しぶといんだけど。褒めてないからね？"],
+    lines:["あら...勇者さん？ ふーん...普通ね"],phase2lines:["ちょっと、しぶといんだけど。褒めてないからね？"],defeatLine:"えー...負けたの？ わたしが？ ...今のノーカンだから！ 次は毒10倍にするから！",
     cards:{claw:{name:"毒の爪",dmg:7,poison:2},fog:{name:"猛毒の霧",poison:5},pot:{name:"呪いの壺",shield:10},elixir:{name:"回復の薬",heal:18},kiss:{name:"毒のキス",dmg:5,poison:3,weaken:1},claw2:{name:"毒の爪+",dmg:8,poison:3},fog2:{name:"猛毒の霧+",poison:6},convert:{name:"毒変換",convertPoison:3},pot2:{name:"呪いの壺+",shield:12},doll:{name:"呪いの人形",curse:"pain"},memfog:{name:"記憶の霧",handExhaust:1,poison:2}}},
   // ── S2 ──
   imp:{name:"炎のインプ",icon:"😈",hp:38,maxHp:38,
@@ -285,7 +285,7 @@ const EN={
   tempura:{name:"炎将てんぷら",icon:"🔥",hp:150,maxHp:150,boss:true,
     phase1deck:["ff","ff","pillar","armor","ff","repair","pillar"],
     phase2deck:["bf","bf","meteor","awaken2","bf"],
-    lines:["おい！ 何だお前！ 勇者？ ふざけんな！"],phase2lines:["もういい、全力だ！ あっつ！ 俺のマントも燃えてる！"],
+    lines:["おい！ 何だお前！ 勇者？ ふざけんな！"],phase2lines:["もういい、全力だ！ あっつ！ 俺のマントも燃えてる！"],defeatLine:"ぐおおお...負けた...おい！ ふざけんな！ 再戦だ再戦！ ...え、ダメ？ ...ちくしょう、飯食って寝る！",
     cards:{ff:{name:"炎拳",dmg:12,burn:2},pillar:{name:"火柱",dmg:8,burn:3,selfBurn:1},armor:{name:"紅蓮の鎧",shield:16},repair:{name:"自己修復",heal:10,selfHealOnce:true},bf:{name:"灼熱拳",dmg:15,burn:2},meteor:{name:"メテオ",dmg:28,burn:3},awaken2:{name:"灼熱覚醒",selfStr:5,selfDmg:10}}},
   // ── S3 ──
   mimic:{name:"ミミック",icon:"📦",hp:62,maxHp:62,
@@ -296,7 +296,7 @@ const EN={
     cards:{dark:{name:"闇の光",dmg:14},pray:{name:"祈り",heal:10},wing:{name:"堕落の翼",dmg:13,shield:5}}},
   ryusei:{name:"親衛隊長りゅうせい",icon:"🦇",hp:160,maxHp:160,elite:true,
     deck:["blade","cstance","wave","blade","cstance","sentence","blade","dheal","cstance"],
-    lines:["...また勇者か。何人目だよ...仕事だからやるけど"],
+    lines:["...また勇者か。何人目だよ...仕事だからやるけど"],defeatLine:"負けた...まあいいか、これで帰れる。魔王様には適当に報告しとく。頑張れよ",
     cards:{blade:{name:"断罪の剣",dmg:18},cstance:{name:"カウンター構え",shield:10,counter:15},wave:{name:"闇の波動",dmg:12,weaken:1},dheal:{name:"暗黒回復",heal:12},sentence:{name:"処刑宣告",doubleNext:true}}},
   roi:{name:"ろい神レクイエム",icon:"👿",hp:250,maxHp:250,boss:true,final:true,
     phase1deck:["tyrant","despair","oppress","tshield","tyrant","fear"],
@@ -304,7 +304,7 @@ const EN={
     phase3deck:["doom","dance","tshield3","dance"],
     lines:["ようこそ我が城へ♪ お前で147人目の挑戦者♡"],
     phase2lines:["...ほう。なかなかやるじゃん。ちょっと本気出すね♡"],
-    phase3lines:["パンの耳を捨てる者に、未来はないッ！！！"],
+    phase3lines:["認めてあげる、あんた強い。だけど──パンの耳を捨てる者に、未来はないッ！！！"],
     cards:{tyrant:{name:"暴虐の一撃",dmg:20},despair:{name:"絶望の布告",curse:"fatigue"},oppress:{name:"圧政",dmg:15,energyDrain:1,handDiscard:1},tshield:{name:"暴虐の盾",shield:20},fear:{name:"恐怖支配",weaken:2},
       awaken:{name:"暴虐覚醒",selfStr:3,shield:10},rush:{name:"暴虐連撃",dmg:12,hits:2},despair2:{name:"絶望の布告",curse:"pain"},majesty:{name:"魔王の威厳",heal:25,shield:10},
       doom:{name:"終焉宣告",doom:3},dance:{name:"暴虐乱舞",dmg:10,hits:3},tshield3:{name:"暴虐の盾+",shield:25}}},
@@ -331,8 +331,9 @@ const SUZU={
 };
 function suzu(c){return pick(SUZU[c]||SUZU.mapMove);}
 const MOKE={
-  stage2:"もけもけ：「ソラは森を抜けた。次は灼熱のコロシアム。...暑いの苦手なんだよね、僕。まあ行かないけど」",
-  stage3:"もけもけ：「ついに魔王城。147人の勇者が散った場所。...ソラで148人目にならないといいね。他人事だけど」",
+  start:"もけもけ：「やあ、僕はもけもけ。語り部だ。村の抽選で勇者に当たった彼の話をしよう。...僕は見てるだけだけど」",
+  stage2:"もけもけ：「ソラは森を抜けた。次は灼熱のコロシアム。ろい神の『全員朝3時起き令』のせいで、観客はみんな眠そうだ。...僕も眠い」",
+  stage3:"もけもけ：「ついに魔王城。146人の勇者が散った場所。ソラで147人目。...切りのいい数字は嫌だね」",
 };
 const GH={poison:"毒が溜まってるぞ。浄化か回復しろ",lowHp:"死にたいのか？ シールド張れ",counter:"やめとけ。「構え」中だ、反撃喰らうぞ",phase:"来るぞ。構えろ",weak:"弱体中だ。攻撃が25%減ってる。浄化で解除しろ",multi:"敵が増えたぞ。タップで攻撃先を変えろ",charge:"溜めてるぞ。次のターン大技が来る",burn:"炎上が重なってるぞ",doom:"即死タイマーだ！ 3ターン以内に削りきれ！！",double:"次の攻撃2倍が来るぞ。シールド最大まで積め",mimic:"そいつ宝箱じゃないぞ。2ターン目から本気出す"};
 const TUT=[
@@ -340,8 +341,21 @@ const TUT=[
  "敵の下の🔮は次の行動予告♡ 大きいダメージが来る前に、防壁でシールド（🛡️）を張って防ぐの",
  "⚡を使い切ったら「ターン終了」。シールドは次のターンに半減するから、貯めすぎは損よ♡ 困ったら❓を見てね",
 ];
-const GD=["毒で死んだな。浄化カードを入れとけ","火力不足だ。筋力バフを積め","シールド張ってないだろ。防御カード使え","デバフ放置したな。浄化で解除しろ","敵が複数いたら召喚元を先に倒せ","カウンター構え中に殴るな","炎上で溶けたな。火消しの外套があると楽だぞ","豪腕は3ターン周期だ。覚えろ","終焉宣告されたら全力で削れ。防御は捨てろ","処刑宣告→断罪のコンボは36超え。鉄壁を合わせろ"];
-const RT=["だっっっさ！ 何そのプレイ！","もっかい来なよ♪ 次はマシなプレイ見せてよね！","見てるこっちが恥ずかしいんだけど！","お前で148人目♪ ...全員負けてるけどね♡"];
+// ゴミカス敗北講評（v2.8タグ化: 敗北時の実状況でフィルタ→該当タグからランダム→該当なしは汎用）
+const GDT={
+  poison:["毒で死んだな。浄化カードを入れとけ"],
+  burn:["炎上で溶けたな。火消しの外套があると楽だぞ"],
+  curse:["デッキが呪いで詰まってたな。焚き火か浄化で捨てろ"],
+  counter:["カウンター構え中に殴るな"],
+  doom:["終焉宣告されたら全力で削れ。防御は捨てろ"],
+  exec:["処刑宣告→断罪のコンボは36超え。鉄壁を合わせろ"],
+  multi:["敵が複数いたら召喚元を先に倒せ"],
+  goliath:["豪腕は3ターン周期だ。覚えろ"],
+  generic:["火力不足だ。筋力バフを積め","シールド張ってないだろ。防御カード使え","デバフ放置したな。浄化で解除しろ"],
+};
+const RT=["だっっっさ！ 何そのプレイ！","もっかい来なよ♪ 次はマシなプレイ見せてよね！","見てるこっちが恥ずかしいんだけど！","これで147連勝♪ わたし強すぎ♡"];
+// ろいP3移行の掛け合い（phase3lines[0]に続けて表示・パンの耳=通貨理論）
+const ROI_P3_TALK=["🤓 ソラ「急に何の話ですか！？」","👿 ろい「この国の税はパンの耳で払えるの。つまりパンの耳は通貨！ 捨てるのは脱税！！ 死刑！！」","🤓 ソラ「じゃあ税率98%って...パンの耳を98%取られる...？」","👿 ろい「そう♡ わたしパンの耳大好きだから♪」","🤓 ソラ「魔王の私欲で経済が回ってる！？」"];
 const ROI_BATTLE=["ろい「ていうかお前、カード切るタイミング下手すぎ」","ろい「そこは防御でしょ！ 見てらんない！」","ろい「ヒマだから相手してあげてるの♪ 感謝して？」","ろい「わたしの税率政策、悪くないと思うんだけどなー」"];
 // ゴリアテ撃破後のゴミカス正体示唆（マップ雑談/相談所プール）
 const GOMI_GOLIATH=["あのチャンプ、妙だったな。筋肉の動きが素人くさい。…いや、\"演技\"くさい、か","ピンクの光、見たか? 俺は見た。…この城の主と同じ色だ。覚えとけ","ゴリアテね。闘技場の記録を調べたが、あいつの名前は3日前に突然現れてる。…臭うな"];
@@ -415,7 +429,7 @@ const EVENTS={
   niyaNap:{name:"にーやの昼寝スポット",S:[1,2,3],lines:[{ch:"😴",nm:"にーや",tx:"ここ…風が気持ちいいの…一緒に寝る…?"},{ch:"🤓",nm:"ソラ",tx:"冒険中なんですが…でも確かに眠く…"}],
     choices:[{t:"[A] 少し寝る → HP20回復",run:s=>{s.run.hp=Math.min(s.run.hp+20,s.run.maxHp);if(Math.random()<.2){s.run.nextBattleHandPenalty=1;s.log=["😴 HP20回復。寝過ごした…次の戦闘は初手-1枚"];}else s.log=["😴 HP20回復。すっきり！"];}},
       {t:"[B] 起こさず立ち去る",run:s=>{s.log=["😴 にーや「ん…いってらっしゃい…zzz」"];}}]},
-  mokeWatch:{name:"もけもけの定点観測",S:[2,3],lines:[{ch:"💤",nm:"もけもけ",tx:"やあ。ここ、冒険者がよく通るから観測してるんだ。…座ってるだけとも言う"},{ch:"🤓",nm:"ソラ",tx:"それ観測って言うんですか?"},{ch:"💤",nm:"もけもけ",tx:"147人見た。君は…そこそこ頑張ってるほう。上位30%くらい"}],
+  mokeWatch:{name:"もけもけの定点観測",S:[2,3],lines:[{ch:"💤",nm:"もけもけ",tx:"やあ。ここ、冒険者がよく通るから観測してるんだ。…座ってるだけとも言う"},{ch:"🤓",nm:"ソラ",tx:"それ観測って言うんですか?"},{ch:"💤",nm:"もけもけ",tx:"146人見た。君で147人目。…今までで一番、目が死んでない"},{ch:"💤",nm:"もけもけ",tx:"歴代でいちばんマシなほう。全員負けてるから、参考記録だけど"}],
     choices:[{t:"[A] 観測データを見せてもらう",run:s=>{s.run.bossHintSeen=true;s.log=["👁️ もけもけ「次のボスの行動順のクセ、教えとくよ」（ゴミカス相談所の廉価版）"];}},
       {t:"[B] 隣に座る → +20G",run:s=>{s.run.gold+=20;s.log=["👁️ もけもけ「暇つぶし代。もらっといて」 +20G"];}}]},
   lostSlime:{name:"迷子の子スライム",S:[1,2],lines:[{ch:"🫧",nm:"子スライム",tx:"ぷる…ぷるぷる…(泣いている)"},{ch:"🤓",nm:"ソラ",tx:"迷子…ですか? 親御さんは…"},{ch:"🐑",nm:"すず",tx:"女神の慈悲を見せる時ね♡ ソラ、なんとかしなさい♡"},{ch:"🤓",nm:"ソラ",tx:"丸投げ!?"}],
@@ -477,7 +491,7 @@ function skitLines(tmpl,type,run){
     {ch:"🤓",nm:"ソラ",tx:"あの、すみません...お昼時にお邪魔して..."},
     {ch:tmpl.icon,nm:n,tx:"...まあいい。ぶっ飛ばしてから飯にするか！"},
     {ch:"🐑",nm:"すず",tx:"宇宙服なのに炎使い...ツッコんでいい？♡"},
-    {ch:tmpl.icon,nm:n,tx:"うるせー！ カッコいいだろ！ ふざけんな！"},
+    {ch:tmpl.icon,nm:n,tx:"うるせー！ これは耐火服だ！ 自分の炎で燃えるんだよ！ ...って言わせんな！ ふざけんな！"},
     {ch:"🐑",nm:"すず",tx:"怒りっぽいわね♡ 可愛く応援してるから♡"}];
   if(n.includes("ろい")){
     const arr=[
@@ -496,6 +510,10 @@ function skitLines(tmpl,type,run){
     arr.push(
       {ch:tmpl.icon,nm:n,tx:"お前で147人目の挑戦者♪ 記念に特別サービスしてあげる♡"},
       {ch:"🤓",nm:"ソラ",tx:"それ嬉しくないやつですよね..."},
+      // v2.8 修正J: 勇者抽選法リベール（通常/goliathDefeated両分岐共通のこのブロックに挿入）
+      {ch:"🤓",nm:"ソラ",tx:"そもそも、なんで僕が勇者に..."},
+      {ch:tmpl.icon,nm:n,tx:"わたしの『勇者抽選法』よ♪ 毎月1人、村から送ってもらってるの。ヒマだから♡"},
+      {ch:"🤓",nm:"ソラ",tx:"自作自演！？ 僕、魔王の暇つぶしで死にかけてるんですか！？"},
       {ch:tmpl.icon,nm:n,tx:"ていうかお前、ここまでのプレイひどかったよ？ 見てたんだけど"},
       {ch:"🤓",nm:"ソラ",tx:"魔王が勇者のプレイ見てるんですか！？"},
       {ch:tmpl.icon,nm:n,tx:"だってヒマなんだもん♪ あとお前がカード切るタイミングマジで下手"},
@@ -511,6 +529,19 @@ function skitLines(tmpl,type,run){
     {ch:"🤓",nm:"ソラ",tx:"今、一瞬声が可愛くなかったですか…？"},
     {ch:tmpl.icon,nm:n,tx:"気のせいだ！！"},
     {ch:"🐑",nm:"すず",tx:suzu("elite")}];
+  if(n.includes("さくや"))return[
+    {ch:"🤓",nm:"ソラ",tx:"え、あの...通してもらえませんか...？"},
+    {ch:tmpl.icon,nm:n,tx:"...ご機嫌よう。通行許可証はお持ちですか？"},
+    {ch:"🤓",nm:"ソラ",tx:"つ、通行許可証...？ そんな制度あるんですか"},
+    {ch:tmpl.icon,nm:n,tx:"ありません。今作りました。...お強い方だけが通れる決まりです"},
+    {ch:"🐑",nm:"すず",tx:"真顔で嘘つく系の敵ね♡ 気をつけて♡"},
+    {ch:tmpl.icon,nm:n,tx:"...参ります。救急箱は、そちらに置いてありますので"}];
+  if(n.includes("りゅうせい"))return[
+    {ch:tmpl.icon,nm:n,tx:"...また勇者か。何人目だよ..."},
+    {ch:"🤓",nm:"ソラ",tx:"あの、お仕事中すみません..."},
+    {ch:tmpl.icon,nm:n,tx:"謝るな。倒しにくくなるだろ。...仕事だからやるけど、恨むなよ"},
+    {ch:"🐑",nm:"すず",tx:"やる気のない敵ね♡ チャンスよ♡"},
+    {ch:tmpl.icon,nm:n,tx:"やる気と強さは別だ。...定時までに終わらせる"}];
   if(type==="elite")return[
     {ch:"🤓",nm:"ソラ",tx:"え、あの...通してもらえませんか...？"},
     {ch:tmpl.icon,nm:n,tx:tmpl.lines[0]},
@@ -611,6 +642,7 @@ function SoraAdventure(){
       str:0,shield:0,poison:0,burn:0,counter:0,thorns:0,weakened:0,energyDebt:0,map:genMap(1),
       seenEvents:[],nextShopDiscount:false,nextBattleHandPenalty:0,forceBattleNext:false,pendingBattleBonus:0,roiGift:false,goliathDefeated:false,sakuyaDefeated:false,bossHintSeen:false,rarePity:0};
     s.enemies=[];s.log=[];s.suzuMsg=suzu("mapStart");s.mokeMsg="";s.gomiMsg="";
+    if(s.meta.totalRuns===1)s.mokeMsg=MOKE.start;  // v2.8: 初回Run開始時のみ もけもけ開始ナレ（勇者抽選法の伏線）
     if(!s.meta.rulesSeen){s.meta.rulesSeen=true;s.showHelp=true;s.helpIntro=true;}
     if(s.meta.totalRuns>1)s.log=["🗡️ 周回ボーナス:「錆びた剣」を装備して開始！"];
     // ステージ開始ボーナス（S1開幕含む全3回・スレスパNeow式）
@@ -760,7 +792,7 @@ function SoraAdventure(){
       if(!t?.boss)return;
       if(t.final){
         if(e.phase===1&&e.hp<=e.maxHp*.6){e.phase=2;e.deckIdx=0;e.str+=2;s.log.push(`⚠️ ${e.name}「${t.phase2lines[0]}」`);s.hint=GH.phase;sfx("phase");}
-        else if(e.phase===2&&e.hp<=e.maxHp*.25){e.phase=3;e.deckIdx=0;s.log.push(`💀 ${e.name}「${t.phase3lines[0]}」`);s.hint=GH.doom;sfx("doom");}
+        else if(e.phase===2&&e.hp<=e.maxHp*.25){e.phase=3;e.deckIdx=0;s.log.push(`💀 ${e.name}「${t.phase3lines[0]}」`);if(e.id==="roi")ROI_P3_TALK.forEach(x=>s.log.push(x));s.hint=GH.doom;sfx("doom");}
       }else if(e.phase===1&&e.hp<=e.maxHp*.5){e.phase=2;e.deckIdx=0;e.str+=3;s.log.push(`⚠️ ${e.name}「${t.phase2lines?.[0]||"..."}」`);s.hint=GH.phase;sfx("phase");}
     });
     // てんぷらP2灼熱フィールド
@@ -850,6 +882,9 @@ function SoraAdventure(){
     const beatRoi=s.enemies.some(e=>e.id==="roi");
     if(beatRoi){s.meta.clears++;s.meta.bestStage=3;s.screen="ending";s.endIdx=0;return;}
     s.log.push("🎉 勝利！");s.suzuMsg=suzu("bossWin");
+    // 撃破台詞（v2.8: もも/てんぷら/さくや/りゅうせい。ゴリアテは変装綻び演出のため対象外）
+    const dl=s.enemies.find(e=>EN[e.id]?.defeatLine);
+    if(dl)s.log.push(`${EN[dl.id].icon} ${EN[dl.id].name}「${EN[dl.id].defeatLine}」`);
     const isBoss=s.enemies.some(e=>EN[e.id]?.boss);const isElite=s.enemies.some(e=>EN[e.id]?.elite);
     // さくや撃破: 同一Run内の再戦防止（フラグ+残存エリートノードを通常戦闘へ変換=クリア済み扱い。報酬の無限稼ぎ対策）
     if(s.enemies.some(e=>e.id==="sakuya")){
@@ -890,9 +925,25 @@ function SoraAdventure(){
       if(forced&&!cards.some(c=>c.r!=="c"))cards[0]=mc(pick(Object.keys(CM).filter(k=>CM[k].r==="u"||CM[k].r==="r")));
     }
     if(cards.some(c=>c.r==="u"||c.r==="r"))s.run.rarePity=0;else s.run.rarePity=(s.run.rarePity||0)+1;
-    s.reward={cards,gold,isBoss,relicDrop,bossHeal};s.screen="reward";
+    s.reward={cards,gold,isBoss,relicDrop,bossHeal,defeatLine:dl?`${EN[dl.id].icon} ${EN[dl.id].name}「${EN[dl.id].defeatLine}」`:null};s.screen="reward";
   }
-  function onLose(s){sfx("lose");s.screen="gameOver";s.meta.bestStage=Math.max(s.meta.bestStage,s.run?.stage||1);s.goTaunt=pick(RT);s.goAdvice=pick(GD);}
+  function onLose(s){
+    sfx("lose");s.screen="gameOver";s.meta.bestStage=Math.max(s.meta.bestStage,s.run?.stage||1);s.goTaunt=pick(RT);
+    // 敗北状況からタグ収集→該当講評プールを合成（該当なしは汎用）
+    const alive=s.enemies.filter(e=>e.hp>0);
+    const eCards=id=>Object.values(EN[id]?.cards||{});
+    const tags=[];
+    if(s.run.poison>0||alive.some(e=>eCards(e.id).some(c=>c.poison)))tags.push("poison");
+    if(s.run.burn>0)tags.push("burn");
+    if(s.run.deck.filter(c=>c.type==="curse").length>=2)tags.push("curse");
+    if(alive.some(e=>eCards(e.id).some(c=>c.counter)))tags.push("counter");
+    if(alive.some(e=>e.doom>0))tags.push("doom");
+    if(alive.some(e=>eCards(e.id).some(c=>c.doubleNext)))tags.push("exec");
+    if(alive.length>=2)tags.push("multi");
+    if(alive.some(e=>e.id==="goliath"))tags.push("goliath");
+    const pool=tags.flatMap(t=>GDT[t]);
+    s.goAdvice=pick(pool.length?pool:GDT.generic);
+  }
 
   const pickReward=card=>upd(s=>{
     sfx("click");
@@ -1054,7 +1105,7 @@ function SoraAdventure(){
         <button style={{...st.btn(P.accent2),fontSize:13,padding:"8px 24px"}} onClick={()=>upd(s=>{s.showHelp=true;})}>❓ あそびかた</button>
         <div style={{color:P.dim,fontSize:10}}>📱 冒険の途中経過と周回記録はこの端末に自動保存されます</div>
         <div style={{color:P.dim,fontSize:11}}>通算{gs.meta.totalRuns}周 | 最高: ステージ{gs.meta.bestStage||"—"} | クリア{gs.meta.clears}回</div>
-        <div style={{color:P.dim,fontSize:9}}>v2.7</div>
+        <div style={{color:P.dim,fontSize:9}}>v2.8</div>
         {gs.meta.totalRuns>0&&gs.meta.clears===0&&<div style={{fontSize:11,color:P.gold}}>🗡️ 2周目以降:「錆びた剣」でスタート</div>}
         {gs.meta.clears>0&&<div style={{fontSize:11,color:P.gold}}>🖤 クリア特典:「虚無の心臓」装備</div>}
       </div></div>);
@@ -1129,7 +1180,8 @@ function SoraAdventure(){
     return(<div style={st.wrap}><style>{CSS}</style><DeckModal/>
       <div className="fadein" style={{padding:16,minHeight:"100dvh",display:"flex",flexDirection:"column"}}>
         <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>🛡️ すらいむ商会</div>
-        <div style={{fontSize:12,color:P.dim,marginBottom:6}}>すらいむ「ビジネスに感情は持ち込まない主義だ」</div>
+        <div style={{fontSize:12,color:P.dim,marginBottom:2}}>すらいむ「いらっしゃい、すらいむ商会だ。...名前で笑うなよ。れっきとした経営者だ」</div>
+        <div style={{fontSize:12,color:P.dim,marginBottom:6}}>すらいむ「ツケは受け付けない。...パンの耳払い？ まあ、相場でな」</div>
         <div style={{...st.suzuBox,marginBottom:8}}>🐑 すず「{gs.suzuMsg}」</div>
         <div style={{fontSize:13,color:P.gold,marginBottom:10}}>💰 {run.gold}G</div>
         {gs.log.length>0&&<div style={{fontSize:12,color:"#4caf50",marginBottom:8}}>{gs.log[gs.log.length-1]}</div>}
@@ -1188,7 +1240,7 @@ function SoraAdventure(){
     const{run}=gs;
     if(!gs.restChoice)return(<div style={st.wrap}><style>{CSS}</style>
       <div className="fadein" style={{padding:20,minHeight:"100dvh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
-        <div style={{fontSize:48}}>😴</div><div style={{fontSize:14}}>にーや「ゆっくり休んでいって...zzz」</div>
+        <div style={{fontSize:48}}>😴</div><div style={{fontSize:14}}>にーや「あ、勇者さん...おつかれさま...zzz...はっ、寝てた」</div>
         {gs.run.goliathDefeated&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:8,maxWidth:320,fontSize:12,color:"#9fa8da",lineHeight:1.6}}>😴 にーや「闘技場のチャンプさん…前にうちで寝てったよ…寝言が『税率98%…』って…」<br/>🤓 ソラ「決定的な証言では!?」</div>}
         <div style={{...st.suzuBox,maxWidth:300}}>🐑 すず「{gs.suzuMsg}」</div>
         <div style={{fontSize:12,color:P.dim}}>❤️ {run.hp}/{run.maxHp}</div>
@@ -1414,6 +1466,7 @@ function SoraAdventure(){
     <div style={st.wrap}><style>{CSS}</style><FlashOverlay/>
       <div className="fadein" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100dvh",padding:20,gap:14}}>
         <div style={{fontSize:24,fontWeight:700}}>🎉 勝利！</div>
+        {gs.reward.defeatLine&&<div style={{fontSize:13,color:P.text,background:P.panelBg,border:`1px solid ${P.accent2}`,borderRadius:10,padding:10,maxWidth:320,lineHeight:1.7}}>{gs.reward.defeatLine}</div>}
         <div style={{fontSize:14,color:P.gold}}>+{gs.reward.gold}G</div>
         {gs.reward.bossHeal>0&&<div style={{fontSize:14,color:"#66bb6a",fontWeight:700}}>❤️ ボス撃破ボーナス HP+{gs.reward.bossHeal} 回復！</div>}
         {gs.reward.relicDrop&&<div style={{background:"rgba(245,197,24,0.1)",border:"1px solid #f5c518",borderRadius:10,padding:10,fontSize:13}}>
@@ -1441,9 +1494,10 @@ function SoraAdventure(){
   if(gs.screen==="ending"){
     const lines=[
       {ch:"👿",nm:"ろい",tx:"うそ...このわたしが...抽選勇者ごときに..."},
-      {ch:"👿",nm:"ろい",tx:"...まあいっか♪ 税率は50%に下げとくね。じゃーね♡"},
-      {ch:"🤓",nm:"ソラ",tx:"まだ50%あるんですけど..."},
+      {ch:"👿",nm:"ろい",tx:"...まあいっか♪ パンの耳税は廃止してあげる。これからは白い部分も食べるわ。あと税率は50%ね。じゃーね♡"},
+      {ch:"🤓",nm:"ソラ",tx:"そこの成長なんですか..."},
       {ch:"🐑",nm:"すず",tx:"やったわソラ！ 女神の導きの勝利よ♡ 記念にわたしを崇めていいわ♡"},
+      {ch:"🐱",nm:"ゴミカス",tx:"...ま、及第点だ。褒めてないぞ"},
       {ch:"💤",nm:"もけもけ",tx:"こうして、世界はそこそこ平和になった。...税率まだ高いけどね"},
       {ch:"💤",nm:"もけもけ",tx:"ソラの大冒険、これにて完結。...2周目？ あるらしいよ。僕は寝るけど"},
     ];
